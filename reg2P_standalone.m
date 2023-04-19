@@ -1,8 +1,19 @@
 function dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
-%dreg=reg2P_standalone(data,mimg,kriging)
+%dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %data - XxYxT 2p data staack
 %mimg - template image (default: 1000 frame average)
 %kriging - whether to use kriging or not
+%numBlocks - default is [32 1]
+%n_ch - how many channels in data
+%whichch - which channel to motion correct based on
+%
+%Based on solution from Suite2p Matlab version, now made as a standable
+%implementation
+%https://github.com/cortex-lab/Suite2P
+%
+%Please cite the original authors
+%
+
 if nargin<6 || isempty(whichch)
     whichch=1;
 end
