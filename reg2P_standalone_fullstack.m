@@ -1,20 +1,41 @@
-function data=reg2P_standalone_fullstack(data,blocksize,n_iter,bidi,n_ch,whichch)
+function data=reg2P_standalone_fullstack(data,batch_size,n_iter,bidi,n_ch,whichch)
+%reg2P_standalone_fullstack(data,batch_size,n_iter,bidi,n_ch,whichch)
+%data - X by Y by (C*T) frame stack
+%batch_size - # of frames to process at one time on one computing core (default: 500)
+%n_iter - # of times to repeat motion correction (default: 1)
+%bidi - whether to correct for bidirectional scanning (default: false)
+%n_ch - number of channels
+%whichch - which channel to motion correct based on
+%
+%Based on solution from Suite2p Matlab version, now made as a standable
+%implementation
+%https://github.com/cortex-lab/Suite2P
+%
+%Please cite the original authors
+%
+%This implementation uses the parallel processing toolbox and has two
+%advancements over the original suite2p scripts: 1. sub-pixel registration,
+%2. correcting for bidirectional scanning, accounting for differences in
+%offset along the x-axis
+%
+%J.M.Stujenske, April 2023
+
 if nargin <4 || isempty(bidi)
     bidi=false;
 end
-if nargin<2 || isempty(blocksize)
-    blocksize=500;
+if nargin<2 || isempty(batch_size)
+    batch_size=500;
 end
 if nargin<3 || isempty(n_iter)
     n_iter=1;
 end
 
 [Ly,Lx,nFrames]=size(data);
-nreps=ceil(nFrames/blocksize);
-if nFrames==nreps*blocksize
-    data_cell=mat2cell(data,Ly,Lx,blocksize*ones(1,nreps));
+nreps=ceil(nFrames/batch_size);
+if nFrames==nreps*batch_size
+    data_cell=mat2cell(data,Ly,Lx,batch_size*ones(1,nreps));
 else
-    data_cell=mat2cell(data,Ly,Lx,[blocksize*ones(1,nreps-1) mod(nFrames,blocksize)]);
+    data_cell=mat2cell(data,Ly,Lx,[batch_size*ones(1,nreps-1) mod(nFrames,batch_size)]);
 end
 in=squeeze(cellfun(@isempty,data_cell));
 data_cell(in)=[];
@@ -35,7 +56,7 @@ end
 dreg=cell(nreps,1);
 for iter=1:n_iter
     parfor rep=1:nreps
-%         frames=1+blocksize*(rep-1):min(blocksize*rep,nFrames);
+%         frames=1+batch_size*(rep-1):min(batch_size*rep,nFrames);
     % temp=reg2P_standalone(data2(:,:,frames),mimg,false);toc;
         dreg{rep}=reg2P_standalone(data_cell{rep},mimg,false,[32 1],n_ch,whichch);
     % dreg(:,:,frames)=normcorre_batch(data2(:,:,frames),options_nonrigid);

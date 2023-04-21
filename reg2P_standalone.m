@@ -1,6 +1,6 @@
 function dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
-%data - XxYxT 2p data staack
+%data - X by Y by (C*T) frame stack
 %mimg - template image (default: 1000 frame average)
 %kriging - whether to use kriging or not
 %numBlocks - default is [32 1]
