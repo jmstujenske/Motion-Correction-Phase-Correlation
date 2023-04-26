@@ -31,16 +31,30 @@ if nargin<3 || isempty(n_iter)
 end
 if ischar(data) %if filename provided instead of the data
 %     [data,info]=bigread4(data);
-    info=readtifftags(data);
     isfile=true;
 else
     isfile=false;
 end
 
 if isfile
+        info=readtifftags(data);
     Ly=info(1).ImageHeight;
     Lx=info(1).ImageWidth;
     nFrames=length(info);
+    fid=fopen(data,'r');
+    fseek(fid,0,'eof');
+    len=ftell(fid);
+    fclose(fid);
+            [folder,filename,ext]=fileparts(data);
+            newfile=fullfile(folder,[filename,'_motcorr',ext]);
+    if len/1e9<3.99
+        TiffWriter=Fast_Tiff_Write(newfile,info(1).Xresolution,0,info(1).ImageDescription);
+    else
+        TiffWriter=Fast_BigTiff_Write(newfile,info(1).Xresolution,0,info(1).ImageDescription);
+    end
+%tic;
+    
+    
 else
     [Ly,Lx,nFrames]=size(data);
 end
@@ -60,11 +74,20 @@ data_cell(in)=[];
 end
 
 
-mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
+% mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
+if isfile
+    mimg=bigread4(data,1,min(1000,nFrames*n_ch));
+    mimg=mean(mimg(:,:,whichch:n_ch:end),3);
+else
+    mimg=mean(data(:,:,whichch:n_ch:min(1000,nFrames*n_ch)),3);
+end
 if bidi
+    [mimg]=correct_bidi_across_x(mimg,1,1);
+end
+if bidi && ~isfile
 % [col_shift] = correct_bidirectional_offset(data,100);
 % mimg=apply_col_shift(mimg,col_shift);
-[mimg]=correct_bidi_across_x(mimg,1,1);
+
     parfor rep=1:nreps
 %         data_cell{rep}=apply_col_shift(data_cell{rep},col_shift);
           data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch);
@@ -76,13 +99,31 @@ end
 % options_nonrigid = NoRMCorreSetParms('d1',dims(1),'d2',dims(2),'grid_size',[64,64],'mot_uf',4,'bin_width',800,'max_shift',[2 2],'max_dev',[50 50],'us_fac',50,'init_batch',100,'shifts_method','cubic');
 dreg=cell(nreps,1);
 for iter=1:n_iter
-    parfor rep=1:nreps
 %         frames=1+batch_size*(rep-1):min(batch_size*rep,nFrames);
     % temp=reg2P_standalone(data2(:,:,frames),mimg,false);toc;
-        dreg{rep}=reg2P_standalone(data_cell{rep},mimg,false,[32 1],n_ch,whichch);
+        if isfile
+            for rep=1:nreps
+            data_cell=bigread4(data,(rep-1)*batch_size,min(batch_size,nFrames-batch_size*(rep-1)));
+            data_cell=correct_bidi_across_x(data_cell,n_ch,whichch);
+            dreg=reg2P_standalone(data_cell,mimg,false,[32 1],n_ch,whichch);
+            for a=1:size(dreg,3);TiffWriter.WriteIMG(dreg(:,:,a)');end;
+            end
+        else
+            parfor rep=1:nreps
+            dreg{rep}=reg2P_standalone(data_cell{rep},mimg,false,[32 1],n_ch,whichch);
+            end
+        end
     % dreg(:,:,frames)=normcorre_batch(data2(:,:,frames),options_nonrigid);
+    if isfile
+        close(TiffWriter);
+        data=newfile;
+    else
+        data=cat(3,dreg{:});
     end
-    data=cat(3,dreg{:});
+    if n_iter>1 && isfile
+        reg2P_standalone_fullstack(newfile,batch_size,n_iter-1,bidi,n_ch,whichch);
+        return;
+    end
 end
 end
 
