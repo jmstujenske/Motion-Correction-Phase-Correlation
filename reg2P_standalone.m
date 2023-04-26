@@ -39,7 +39,7 @@ data=single(data);
 
 if nargin<2 || isempty(mimg)
     mimg=gen_template(data,min(1000,nFrames));
-    mimg=pad_expand(mimg,pad);
+%     mimg=pad_expand(mimg,pad);
     mimg=single(mimg);
 else
     mimg=pad_expand(mimg,pad);
@@ -57,7 +57,7 @@ end
 bfrac     = 1./max(2,ceil((numBlocks-3)/3));
 bfrac(numBlocks==1) = 1;
 % blockFrac = getOr(ops, {'blockFrac'}, bfrac);
-bpix      = round(bfrac .* [Ly Lx]);
+bpix      = ceil(bfrac .* [Ly Lx]);
 
 % pixel overlap of blocks
 % pixoverlap    = [];
@@ -75,24 +75,24 @@ ib        = 0;
 yBL=cell(prod(numBlocks),1);
 xBL=yBL;
 for iy = 1:numBlocks(1)
-    if iy == numBlocks(1)
-        yB(iy)  = Ly - floor(bpix(1)/2);
-    elseif iy == 1
-        yB(iy)  = floor(bpix(1)/2) + 1;
-    end
+%     if iy == numBlocks(1)
+%             yB(iy)  = Ly - floor(bpix(1)/2);
+%     elseif iy == 1
+%         yB(iy)  = floor(bpix(1)/2) + 1;
+%     end
     if numBlocks(2) > 1
         for ix = 1:numBlocks(2)
             ib = ib+1;
-            if ix == numBlocks(2)
-                xB(ix)  = Lx - floor(bpix(2)/2);
-            elseif ix == 1
-                xB(ix)  = floor(bpix(2)/2) + 1;
-            end
+%             if ix == numBlocks(2)
+%                 xB(ix)  = Lx - floor(bpix(2)/2);
+%             elseif ix == 1
+%                 xB(ix)  = floor(bpix(2)/2) + 1;
+%             end
 
             yBL{ib} = max(1,yB(iy)-floor(bpix(1)/2)) : ...
                 min(Ly,yB(iy)+floor(bpix(1)/2));
             xBL{ib} = max(1,xB(ix)-floor(bpix(2)/2)) : ...
-                min(Ly,xB(ix)+floor(bpix(2)/2));
+                min(Lx,xB(ix)+floor(bpix(2)/2));
         end
     else
         ib = ib+1;
@@ -113,27 +113,34 @@ nblocks = ib;
 sT(1)        = mean(diff(yB)) * 2/3;
 sT(2)        = mean(diff(xB)) * 2/3;
 sT = max(10, sT);
-
 xyMask = zeros(Ly, Lx, nblocks, 'single');
 ib=0;
 for iy = 1:numBlocks(1)
     if numBlocks(2) > 1
         for ix = 1:numBlocks(2)
             ib=ib+1;
-            gausy = exp(-((1:Ly)' - yB(iy)).^2 / (2*sT(1).^2));
+            if numBlocks(1)>1
+                gausy = exp(-((1:Ly)' - yB(iy)).^2 / (2*sT(1).^2));
+            else
+                gausy=ones(Ly,1);
+            end
             gausx = exp(-((1:Lx)' - xB(ix)).^2 / (2*sT(2).^2));
             xyMask(:, :, ib) = gausy * gausx';
         end
     else
         ib=ib+1;
-        gausy = exp(-((1:Ly)' - yB(iy)).^2 / (2*sT(1).^2));
+        if numBlocks(1)>1
+            gausy = exp(-((1:Ly)' - yB(iy)).^2 / (2*sT(1).^2));
+        else
+            gausy = ones(Ly,1);
+        end
         xyMask(:, :, ib) = repmat(gausy, 1, Lx);
     end
 end
 
 xyMask = xyMask./repmat(sum(xyMask, 3), 1, 1, size(xyMask, 3));
 xyMask = reshape(xyMask, Ly*Lx, nblocks);
-
+xyMask(isnan(xyMask))=0;
 % xyMask    = xyMask;
 
 indframes=1:size(data,3);
@@ -169,11 +176,11 @@ subpixel = 10;
 useGPU = false;
 phaseCorrelation = true;
 % maximum shift allowed
-maxregshift = 100;
+maxregshift = 30;
 % slope on taper mask preapplied to image. was 2, then 1.2
 maskSlope   = 2;
 % SD pixels of gaussian smoothing applied to correlation map (MOM likes .6)
-smoothSigma = .6;
+smoothSigma = 1.15;
 
 
 % if subpixel is still inf, threshold it for new method
@@ -196,7 +203,6 @@ for ib=1:nblocks
     mX      = max(xs(:)) - 4;
     maskMul = single(1./(1 + exp((ys - mY)/maskSlope)) ./(1 + exp((xs - mX)/maskSlope)));
     maskOffset = mean(refImg(:))*(1 - maskMul);
-
     % Smoothing filter in frequency domain
     hgx = exp(-(((0:lx-1) - fix(lx/2))/smoothSigma).^2);
     hgy = exp(-(((0:ly-1) - fix(ly/2))/smoothSigma).^2);
@@ -221,7 +227,7 @@ for ib=1:nblocks
         batchSize = 1000;
     end
 
-    % allow max shifts +/- lcorr
+    % allow max shifts +/- lcor
     lpad   = 3;
     lcorr  = min(maxregshift, floor(min(ly,lx)/2)-lpad);
 
@@ -236,7 +242,7 @@ for ib=1:nblocks
         % compute kernels for regression
         sigL     = .85; % kernel width in pixels
         Kx = kernelD(xt,xt,sigL*[1;1]);
-        linds = [-lpad:1/subpixel:lpad];
+        linds = -lpad:1/subpixel:lpad;
         [x1,x2] = ndgrid(linds);
         xg = [x1(:) x2(:)]';
         if useGPU
@@ -273,13 +279,12 @@ for ib=1:nblocks
         corrClip = real(ifft2(corrMap));
         corrClip = fftshift(fftshift(corrClip, 1), 2);
         corrClipSmooth = corrClip;
-
         %% subpixel registration
         if subpixel > 1
             % kriging subpixel
             % allow only +/- lcorr shifts
-            cc0         = corrClipSmooth(floor(ly/2)+1+[-lcorr:lcorr],...
-                floor(lx/2)+1+[-lcorr:lcorr],:);
+            cc0         = corrClipSmooth(floor(ly/2)+1+(-lcorr:lcorr),...
+                floor(lx/2)+1+(-lcorr:lcorr),:);
             [cmax,ii]   = max(reshape(cc0, [], numel(fi)),[],1);
 
             [iy, ix] = ind2sub((2*lcorr+1) * [1 1], ii);
@@ -342,14 +347,29 @@ end
 % ds=dv;
 % xyMask=true(size(data,1),size(data,2));
 % smooth offsets across blocks by xyMask
+
+%center rigid registration
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
+
+% max_shift=[10 30];
+% dx(abs(dx)>max_shift(2))=NaN;
+% dy(abs(dy)>max_shift(1))=NaN;
+% filt_size=5;
+% while any(isnan(dx) | isnan(dy),1:3)
+%     medfilt_dx=medfilt1(dx,filt_size,'omitnan','zeropad',3);
+%     medfilt_dy=medfilt1(dy,filt_size,'omitnan','zeropad',3);
+%     dx(isnan(dx))=medfilt_dx(isnan(dx));
+%     dy(isnan(dy))=medfilt_dy(isnan(dy));
+%     filt_size=filt_size+1;
+% end
+
+
 dx = reshape(dx, Ly, Lx, []);
 dy = reshape(dy, Ly, Lx, []);
 
 idy = repmat([1:Ly]', 1, Lx);
 idx = repmat([1:Lx],  Ly, 1);
-
 
 dreg = zeros(size(data), class_data);
 
@@ -362,38 +382,11 @@ dreg = zeros(size(data), class_data);
 % dx=medfilt1(dx,5,[],3);
 % dy=medfilt1(dy,5,[],3);
 for i = 1:NT
-%     Valid = true(Ly, Lx);
     frame_num=ceil(i/n_ch);
     Im = data_orig(:,:,i);
     dx_i=dx(:,:,frame_num);
-%     goodbg=dx_i(~mask);
-%     F = scatteredInterpolant(x,y,double(goodbg(:)),'nearest');
-%     fixes_x=F(x_bad,y_bad);
-%     dx_i(mask)=fixes_x;
     dy_i=dy(:,:,frame_num);
-%     goodbg=dy_i(~mask);
-%     F = scatteredInterpolant(x,y,double(goodbg(:)),'nearest');
-%     fixes_y=F(x_bad,y_bad);
-%     dy_i(mask)=fixes_y;
 
-% %     % apply offsets to indexing
-% %     DX = dx_i + idx;
-% %     DY = dy_i + idy;
-% % 
-% %     % compute valid area of frame
-% % %     Valid = true(Ly, Lx);
-% %     xyInvalid = DX<0 | DX>Lx-1 | DY<1 | DY>Ly;
-% % %     Valid(xyInvalid) = false;
-% %     
-% %     DX(xyInvalid) = 0;
-% %     DY(xyInvalid) = 0;
-
-    %     DX = mod(DX, Lx);
-    %     DY = mod(DY-1, Ly) + 1;
-    %
-% % %     ind = max(DY + DX * Ly,1);
-% % %     Im = Im(ind);
-% % %     dreg(:,:,i) = cast(Im,class_data);
 dreg(:,:,i)=imwarp(cast(Im,class_data),cat(3,dx_i,dy_i));
 end
 dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
