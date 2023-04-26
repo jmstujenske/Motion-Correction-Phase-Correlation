@@ -29,7 +29,9 @@ end
 if nargin<3 || isempty(n_iter)
     n_iter=1;
 end
-
+if ischar(data)
+    data=bigread4(data);
+end
 [Ly,Lx,nFrames]=size(data);
 nreps=ceil(nFrames/batch_size);
 if nFrames==nreps*batch_size
