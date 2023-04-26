@@ -103,7 +103,7 @@ for iter=1:n_iter
     % temp=reg2P_standalone(data2(:,:,frames),mimg,false);toc;
         if isfile
             for rep=1:nreps
-            data_cell=bigread4(data,(rep-1)*batch_size,min(batch_size,nFrames-batch_size*(rep-1)));
+            data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
             data_cell=correct_bidi_across_x(data_cell,n_ch,whichch);
             dreg=reg2P_standalone(data_cell,mimg,false,[32 1],n_ch,whichch);
             for a=1:size(dreg,3);TiffWriter.WriteIMG(dreg(:,:,a)');end;
