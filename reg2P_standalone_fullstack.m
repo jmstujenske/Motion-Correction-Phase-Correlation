@@ -29,18 +29,37 @@ end
 if nargin<3 || isempty(n_iter)
     n_iter=1;
 end
-if ischar(data)
-    data=bigread4(data);
+if ischar(data) %if filename provided instead of the data
+%     [data,info]=bigread4(data);
+    info=readtifftags(data);
+    isfile=true;
+else
+    isfile=false;
 end
-[Ly,Lx,nFrames]=size(data);
+
+if isfile
+    Ly=info(1).ImageHeight;
+    Lx=info(1).ImageWidth;
+    nFrames=length(info);
+else
+    [Ly,Lx,nFrames]=size(data);
+end
 nreps=ceil(nFrames/batch_size);
+
+%cut data up into cells
+if ~isfile
 if nFrames==nreps*batch_size
     data_cell=mat2cell(data,Ly,Lx,batch_size*ones(1,nreps));
 else
     data_cell=mat2cell(data,Ly,Lx,[batch_size*ones(1,nreps-1) mod(nFrames,batch_size)]);
 end
+
+%remove empty cells
 in=squeeze(cellfun(@isempty,data_cell));
 data_cell(in)=[];
+end
+
+
 mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 if bidi
 % [col_shift] = correct_bidirectional_offset(data,100);
