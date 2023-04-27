@@ -1,4 +1,4 @@
-function dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
+function [dreg,shifts]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift)
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %data - X by Y by (C*T) frame stack
 %mimg - template image (default: 1000 frame average)
@@ -6,14 +6,16 @@ function dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %numBlocks - default is [32 1]
 %n_ch - how many channels in data
 %whichch - which channel to motion correct based on
-%
+%maxregshift - maximum shift (default: 30)
 %Based on solution from Suite2p Matlab version, now made as a standable
 %implementation
 %https://github.com/cortex-lab/Suite2P
 %
 %Please cite the original authors
 %
-
+if nargin<7 || isempty(maxregshift)
+    maxregshift=30;
+end
 if nargin<6 || isempty(whichch)
     whichch=1;
 end
@@ -176,12 +178,10 @@ subpixel = 10;
 useGPU = false;
 phaseCorrelation = true;
 % maximum shift allowed
-maxregshift = 30;
 % slope on taper mask preapplied to image. was 2, then 1.2
 maskSlope   = 2;
 % SD pixels of gaussian smoothing applied to correlation map (MOM likes .6)
 smoothSigma = 1.15;
-
 
 % if subpixel is still inf, threshold it for new method
 subpixel = min(10, subpixel);
@@ -348,9 +348,7 @@ end
 % xyMask=true(size(data,1),size(data,2));
 % smooth offsets across blocks by xyMask
 
-%center rigid registration
-dx = (xyMask * ds(:,:,2));
-dy = (xyMask * ds(:,:,1));
+
 
 % max_shift=[10 30];
 % dx(abs(dx)>max_shift(2))=NaN;
@@ -364,6 +362,8 @@ dy = (xyMask * ds(:,:,1));
 %     filt_size=filt_size+1;
 % end
 
+dx = (xyMask * ds(:,:,2));
+dy = (xyMask * ds(:,:,1));
 
 dx = reshape(dx, Ly, Lx, []);
 dy = reshape(dy, Ly, Lx, []);
@@ -390,17 +390,13 @@ for i = 1:NT
 dreg(:,:,i)=imwarp(cast(Im,class_data),cat(3,dx_i,dy_i));
 end
 dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
-
+if nargout>1
+    shifts={xyMask,ds};
+end
 
 % if nargin > 2 && removeMean
 %     dv = bsxfun(@minus, dv, mean(dv,1));
 % end
-function data=pad_expand(data,pad)
-data_temp=data;
-data=[data(pad+1:-1:2,:,:);data;data(end:-1:end-pad+1,:,:)];
-data=[data(:,pad+1:-1:2,:) data data(:,end:-1:end-pad+1,:)];
 
-data=imgaussfilt(data,floor(pad/2));
-data(pad+1:end-pad,pad+1:end-pad,:)=data_temp;
 % keyboard
 % data(1:pad,1:pad,:)=[data(pad+:pad*2,pad+1:-1:2,:)
