@@ -7,7 +7,7 @@ function [fixed,dx]=correct_bidi_across_x(data,n_ch,whichch,lowmemory)
 %data - X by Y by (C*T) stack (channels interleaved)
 %n_ch - now many channels
 %whichch - which channel to based the correction on
-%lowmemory - reduced memory mode (default: false)
+%lowmemory - reduced memory mode (default: true); processes in chunks
 %
 %OUTPUT:
 %fixed - corrected stack of the same size as data
@@ -17,7 +17,7 @@ function [fixed,dx]=correct_bidi_across_x(data,n_ch,whichch,lowmemory)
 %
 %
 if nargin<4 || isempty(lowmemory)
-    lowmemory=false;
+    lowmemory=true;
 end
 bg_pix=50; %radius of gaussian blur for background correction
 upsample=10;
@@ -26,12 +26,13 @@ lags=-100:100;
 smooth_lag=25;
 edge_remove=10;
 [Ly,Lx,nFrames]=size(data);
+nFrames=nFrames/n_ch;
 grn=data(:,:,whichch:n_ch:end);
 xcor_dat=zeros(length(lags),Lx*upsample);
 
 %upsample along the x-axis
-upsized=imresize(grn,[Ly Lx*upsample]);
-img=mean(upsized,3);
+img=mean(grn,3);
+img=imresize(img,[Ly Lx*upsample]);
 
 %correct for differences in fluorescence across the image, to equalize
 %weighting
@@ -65,9 +66,9 @@ dx=lags(in);
 dx(abs(dx)>=upsample*max_shift)=NaN;
 dx(isnan(dx))=interp1(find(~isnan(dx)),dx(~isnan(dx)),find(isnan(dx)),'nearest','extrap');
 dx=conv(dx,gausskernel(smooth_lag*20,smooth_lag*2),'same');
-upsized=upsized(1:2:end,:,:);
-[Ly Lx nFrames]=size(upsized);
-% Ly=Ly/2;
+
+[Ly,Lx]=size(img);
+Ly=ceil(Ly/2);
 
 %%subpixel-registration
 %
@@ -83,27 +84,37 @@ xyInvalid = DX<0 | DX>Lx-1;
 
 DX(xyInvalid) = 0;
 
-ind = max(idy + DX * Ly,1);
+% ind = max(idy + DX * Ly,1);
 
 %upsample the other channels
 fixed=data;
-inds=(ind+Ly*Lx*reshape((0:nFrames-1),1,1,[]));
-for rep=[whichch setdiff(1:n_ch,whichch)]
-    if rep~=whichch
-        upsized=imresize(data(1:2:end,:,rep:n_ch:end),[Ly Lx]);
-    end
-%     low memory implementation: loop through every frame and apply the same correction to each
-%     loop through every frame and apply the same correction to each
 if lowmemory
-    for i=1:nFrames
-        subpix_fix=upsized(ind+(Ly*Lx*(i-1)));
-
-        %downsample back to original sampling
-        fixed(1:2:end,:,n_ch*(i-1)+rep)=imresize(subpix_fix,[Ly Lx/upsample]);
-
-    end
+    batch_size=16;
 else
-    subpix_fix=upsized(inds); %directly indexing the matrix is 30% faster for large matrices
-    fixed(1:2:end,:,rep:n_ch:end)=imresize(subpix_fix,[Ly Lx/10]);
+    batch_size=Ly;
+end
+n_batches=ceil(Ly/batch_size);
+for rep=1:n_ch
+    for batch=1:n_batches
+        lines=1+(batch-1)*batch_size*2:2:min(batch_size*2*batch,Ly*2);
+        this_batch_size=length(lines);
+        ins=(1:this_batch_size)+(batch-1)*batch_size;
+        cur_ind = max(idy(ins,:)-(batch-1)*batch_size + DX(ins,:) * this_batch_size,1);
+        upsized=imresize(data(lines,:,rep:n_ch:end),[this_batch_size Lx]);
+%     OLD implementation: loop through every frame and apply the same correction to each
+%     loop through every frame and apply the same correction to each
+%         for i=1:nFrames
+%             subpix_fix=upsized(cur_ind+(this_batch_size*Lx*(i-1)));
+%             %downsample back to original sampling
+%             fixed(lines,:,n_ch*(i-1)+rep)=imresize(subpix_fix,[Ly Lx/upsample]);
+%         end
+        inds=(cur_ind+this_batch_size*Lx*reshape((0:nFrames-1),1,1,[]));
+        try
+        subpix_fix=upsized(inds); %directly indexing the matrix is 30% faster for large matrices
+        catch
+            keyboard;
+        end
+        fixed(lines,:,rep:n_ch:end)=imresize(subpix_fix,[this_batch_size Lx/upsample]);
+    end
 end
 end
