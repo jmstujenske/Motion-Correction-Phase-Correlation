@@ -64,7 +64,11 @@ dx=lags(in);
 %remove outliers -- usually it is the edges of the image due to unavoidable
 %edge effects; interpolate with nearest neighbor interpolation
 dx(abs(dx)>=upsample*max_shift)=NaN;
+try
 dx(isnan(dx))=interp1(find(~isnan(dx)),dx(~isnan(dx)),find(isnan(dx)),'nearest','extrap');
+catch
+    keyboard
+end
 dx=conv(dx,gausskernel(smooth_lag*20,smooth_lag*2),'same');
 
 [Ly,Lx]=size(img);
@@ -109,11 +113,7 @@ for rep=1:n_ch
 %             fixed(lines,:,n_ch*(i-1)+rep)=imresize(subpix_fix,[Ly Lx/upsample]);
 %         end
         inds=(cur_ind+this_batch_size*Lx*reshape((0:nFrames-1),1,1,[]));
-        try
         subpix_fix=upsized(inds); %directly indexing the matrix is 30% faster for large matrices
-        catch
-            keyboard;
-        end
         fixed(lines,:,rep:n_ch:end)=imresize(subpix_fix,[this_batch_size Lx/upsample]);
     end
 end

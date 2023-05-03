@@ -77,10 +77,10 @@ end
 
 % mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 if isfile
-    mimg=bigread4(data,1,min(1000,nFrames*n_ch));
+    mimg=bigread4(data,1,min(500*n_ch,nFrames*n_ch));
     mimg=mean(mimg(:,:,whichch:n_ch:end),3);
 else
-    mimg=mean(data(:,:,whichch:n_ch:min(1000,nFrames*n_ch)),3);
+    mimg=mean(data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
 end
 if bidi
     [mimg]=correct_bidi_across_x(mimg,1,1);
@@ -119,10 +119,6 @@ dreg=cell(nreps,1);
         data=newfile;
     else
         data=cat(3,dreg{:});
-    end
-    if n_iter>1 && isfile
-        reg2P_standalone_fullstack(newfile,batch_size,n_iter-1,bidi,n_ch,whichch);
-        return;
     end
 end
 

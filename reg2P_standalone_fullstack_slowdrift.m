@@ -9,7 +9,7 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %n_ch - number of channels
 %whichch - which channel to motion correct based on
 %memmap - try to memory map tiff and edit directly (default: false)
-%blocksize - two steps; default is [32 1;16 16];
+%blocksize - two steps; default is [32 1;32 32];
 %
 %OUTPUT:
 %data_out - either the corrected frame stack OR new filename (tif)
@@ -37,7 +37,7 @@ if nargin <6 || isempty(memmap)
     memmap=false;
 end
 if nargin<7 || isempty(blocksize)
-    blocksize=[32 1;16 16];
+    blocksize=[32 1;20 20];
 end
 if numel(blocksize)<4
     error('For one step corretion, use reg2P_standalone_fullstack');
@@ -90,6 +90,7 @@ else
     memmap=false;
     [Ly,Lx,nFrames]=size(data);
 end
+batch_size=min(batch_size,nFrames);
 nreps=ceil(nFrames/batch_size);
 
 %cut data up into cells
@@ -99,7 +100,6 @@ if ~isfile
     else
         data_cell=mat2cell(data,Ly,Lx,[batch_size*ones(1,nreps-1) mod(nFrames,batch_size)]);
     end
-    clear data;
     %remove empty cells
     in=squeeze(cellfun(@isempty,data_cell));
     data_cell(in)=[];
@@ -108,23 +108,26 @@ end
 % mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 if isfile
     if ~memmap
-        mimg=bigread4(data,1,min(1000,nFrames*n_ch));
+        mimg=bigread4(data,1,min(500*n_ch,nFrames*n_ch));
         mimg=mean(mimg(:,:,whichch:n_ch:end),3);
     else
-        mimg=mean(m.Data.allchans(:,:,whichch:n_ch:end),3);
+        mimg=mean(m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
     end
 else
-    mimg=mean(data(:,:,whichch:n_ch:min(1000,nFrames*n_ch)),3);
+    mimg=mean(data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
+    clear data;
 end
 if bidi
-    [mimg]=correct_bidi_across_x(mimg,1,1);
+    [mimg,bidi_dx]=correct_bidi_across_x(mimg,1,1);
 end
 if bidi && ~isfile
     % [col_shift] = correct_bidirectional_offset(data,100);
     % mimg=apply_col_shift(mimg,col_shift);
     parfor rep=1:nreps
         %         data_cell{rep}=apply_col_shift(data_cell{rep},col_shift);
-        data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch);
+        data_cell{rep}=apply_bidi_correction(data_cell{rep},bidi_dx,true);
+        %       data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true);
+        
     end
 end
 % dreg=zeros(Ly,Lx,nFrames,'single');
@@ -142,12 +145,23 @@ for rep=1:nreps
     if isfile
         if ~memmap
             data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
-            data_cell=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
+            try
+                [data_cell,bidi_dx]=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
+            catch
+                [data_cell]=apply_bidi_correction(data_cell,bidi_dx,true); %low memory mode
+            end
+            
         else
             frames=(rep-1)*batch_size+1:(rep-1)*batch_size+min(batch_size,nFrames-batch_size*(rep-1));
-            data_cell=correct_bidi_across_x(m.Data.allchans(:,:,frames),n_ch,whichch,true); %low memory mode
+            try
+                [data_cell,bidi_dx]=correct_bidi_across_x(m.Data.allchans(:,:,frames),n_ch,whichch,true); %low memory mode
+            catch
+                [data_cell]=apply_bidi_correction(m.Data.allchans(:,:,frames),bidi_dx,true); %low memory mode
+            end
         end
     end
+    
+    
     
     %correct for scanning line shifts
     if isfile
@@ -155,16 +169,18 @@ for rep=1:nreps
     else
         [dreg]=reg2P_standalone(data_cell{rep},mimg,false,blocksize(1,:),n_ch,whichch);
     end
-%     shifts{1}=cat(1,shifts{1},shift_temp_first);
+    if rep==1
+        mimg=mean(dreg(:,:,whichch:n_ch:end),3);
+    end
+    %     shifts{1}=cat(1,shifts{1},shift_temp_first);
     nF_dreg=size(dreg,3);
     
     %correct for bigger distortions, which only really occur gradually over
     %time
-    
-    %break into halves, and then we will smooth over three batch running
+    %break into halves, and then we will smooth over three half-batch weighted running
     %average
-    [~,shift_temp]=reg2P_standalone(nanmean(dreg(:,:,1:floor(nF_dreg/2)),3),mimg,false,blocksize(2,:),n_ch,whichch,10);
-    [~,shift_temp2]=reg2P_standalone(nanmean(dreg(:,:,floor(nF_dreg/2)+1:end),3),mimg,false,blocksize(2,:),n_ch,whichch,10);
+    [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,blocksize(2,:),1,1,10);
+    [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,blocksize(2,:),1,1,10);
     shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
     
     %apply shifts
@@ -173,9 +189,9 @@ for rep=1:nreps
         %prior batch that still needs to be shifted
         
         %smooth over three batches
-        shifts_temp=cat(4,shifts{1:3,2});
-        shifts_temp=mean(shifts_temp,4);
-        
+        %         shifts_temp=cat(4,shifts{1:3,2});
+        %         shifts_temp=mean(shifts_temp,4);
+        shifts_temp=shifts{2,2};
         %apply shifts
         dreg_prior=apply_reg2P_shifts(dreg_prior,{shifts{2,1},shifts_temp});
         
@@ -189,17 +205,20 @@ for rep=1:nreps
         else
             %prior batch data needs shifting, and we only saved the first
             %half
-            dreg_full{rep-1}=cat(3,dreg_full{rep-1},dreg_prior(:,:,a));
+            dreg_full{rep-1}=cat(3,dreg_full{rep-1},dreg_prior);
         end
         
         %smooth the first half of the current batch now
-        shifts_temp=cat(4,shifts{2:4,2});
-        shifts_temp=mean(shifts_temp.*reshape([1 2 1],[1 1 1 3]),4);
+        %         shifts_temp=cat(4,shifts{2:4,2});
+        shifts_temp=shifts{3,2};
+        %         shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
     else
         %if the first batch, then there is no prior to deal with
-        shifts_temp=cat(4,shifts{:,2});
-        shifts_temp=mean(shifts_temp.*reshape([2 1],[1 1 1 2]),4);
+        %         shifts_temp=cat(4,shifts{:,2});
+        shifts_temp=shifts{3,2};
+        
+        %         shifts_temp=mean(shifts_temp.*reshape([2 1]/3*2,[1 1 1 2]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
     end
     if rep~=nreps
@@ -208,8 +227,9 @@ for rep=1:nreps
     else
         %if it is the last batch, then we correct the last batch just based on
         %the last two corrections
-        shifts_temp=cat(4,shifts{end-1:end,2});
-        shifts_temp=mean(shifts_temp.*reshape([1 2],[1 1 1 2]),4);
+        %         shifts_temp=cat(4,shifts{end-1:end,2});
+        %         shifts_temp=mean(shifts_temp.*reshape([1 2]/3*2,[1 1 1 2]),4);
+        shifts_temp=shifts{end,2};
         dreg(:,:,floor(nF_dreg/2)+1:end)=apply_reg2P_shifts(dreg(:,:,floor(nF_dreg/2)+1:end),{shifts{end,1},shifts_temp});
     end
     if isfile
