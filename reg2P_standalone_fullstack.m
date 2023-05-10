@@ -105,12 +105,12 @@ dreg=cell(nreps,1);
             for rep=1:nreps
             data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
             data_cell=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
-            dreg=reg2P_standalone(data_cell,mimg,false,[32 1],n_ch,whichch);
+            dreg=reg2P_standalone_twostep(data_cell,mimg,false,[32 1],n_ch,whichch);
             for a=1:size(dreg,3);TiffWriter.WriteIMG(dreg(:,:,a)');end;
             end
         else
             parfor rep=1:nreps
-            dreg{rep}=reg2P_standalone(data_cell{rep},mimg,false,[32 1],n_ch,whichch);
+            dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,[32 1],n_ch,whichch);
             end
         end
     % dreg(:,:,frames)=normcorre_batch(data2(:,:,frames),options_nonrigid);

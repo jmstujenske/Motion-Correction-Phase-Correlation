@@ -19,12 +19,20 @@ function [fixed,dx]=correct_bidi_across_x(data,n_ch,whichch,lowmemory)
 if nargin<4 || isempty(lowmemory)
     lowmemory=true;
 end
+if nargin<2 || isempty(n_ch)
+    n_ch=1;
+end
+if nargin<3 || isempty(whichch)
+    whichch=1;
+end
 bg_pix=50; %radius of gaussian blur for background correction
 upsample=10;
-max_shift=1;
+max_shift=1.5; %assume that the pixel correction should be less than 1.5 pixels in any given location;
+%this is necessary to avoid weird edge effects from limited sample points --
+%maybe another solution would be better
 lags=-100:100;
 smooth_lag=25;
-edge_remove=10;
+edge_remove=upsample;
 [Ly,Lx,nFrames]=size(data);
 nFrames=nFrames/n_ch;
 grn=data(:,:,whichch:n_ch:end);
@@ -63,11 +71,13 @@ dx=lags(in);
 
 %remove outliers -- usually it is the edges of the image due to unavoidable
 %edge effects; interpolate with nearest neighbor interpolation
-dx(abs(dx)>=upsample*max_shift)=NaN;
-try
+dx(abs(dx-mean(dx))>=upsample*max_shift)=NaN;
+if ~all(isnan(dx)) %%this shouldn't ever really happen, but just in case the dx are all NaN, then we will return the original data
 dx(isnan(dx))=interp1(find(~isnan(dx)),dx(~isnan(dx)),find(isnan(dx)),'nearest','extrap');
-catch
-    keyboard
+else
+    dx=zeros(size(dx));
+    fixed=data;
+    return;
 end
 dx=conv(dx,gausskernel(smooth_lag*20,smooth_lag*2),'same');
 

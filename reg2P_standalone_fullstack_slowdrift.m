@@ -165,23 +165,27 @@ for rep=1:nreps
     
     %correct for scanning line shifts
     if isfile
-        [dreg]=reg2P_standalone(data_cell,mimg,false,blocksize(1,:),n_ch,whichch);
+        [dreg]=reg2P_standalone_twostep(data_cell,mimg,false,blocksize(1,:),n_ch,whichch);
     else
-        [dreg]=reg2P_standalone(data_cell{rep},mimg,false,blocksize(1,:),n_ch,whichch);
+        [dreg]=reg2P_standalone_twostep(data_cell{rep},mimg,false,blocksize(1,:),n_ch,whichch);
     end
     if rep==1
         mimg=mean(dreg(:,:,whichch:n_ch:end),3);
     end
     %     shifts{1}=cat(1,shifts{1},shift_temp_first);
     nF_dreg=size(dreg,3);
-    
     %correct for bigger distortions, which only really occur gradually over
     %time
     %break into halves, and then we will smooth over three half-batch weighted running
     %average
-    [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,blocksize(2,:),1,1,10);
-    [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,blocksize(2,:),1,1,10);
-    shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
+    
+    %do not recalculate shifts if there is too little data at the end of
+    %the file; otherwise calculate shifts
+    if rep~=nreps || size(dreg,3)>=batch_size/2
+          [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,blocksize(2,:),1,1,10);
+          [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,blocksize(2,:),1,1,10);
+        shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
+    end
     
     %apply shifts
     if rep~=1
@@ -209,16 +213,16 @@ for rep=1:nreps
         end
         
         %smooth the first half of the current batch now
-        %         shifts_temp=cat(4,shifts{2:4,2});
-        shifts_temp=shifts{3,2};
-        %         shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
+                shifts_temp=cat(4,shifts{2:4,2});
+%         shifts_temp=shifts{3,2};
+                shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
     else
         %if the first batch, then there is no prior to deal with
-        %         shifts_temp=cat(4,shifts{:,2});
-        shifts_temp=shifts{3,2};
+                shifts_temp=cat(4,shifts{:,2});
+%         shifts_temp=shifts{3,2};
         
-        %         shifts_temp=mean(shifts_temp.*reshape([2 1]/3*2,[1 1 1 2]),4);
+                shifts_temp=mean(shifts_temp.*reshape([2 1]/3*2,[1 1 1 2]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
     end
     if rep~=nreps
@@ -227,9 +231,9 @@ for rep=1:nreps
     else
         %if it is the last batch, then we correct the last batch just based on
         %the last two corrections
-        %         shifts_temp=cat(4,shifts{end-1:end,2});
-        %         shifts_temp=mean(shifts_temp.*reshape([1 2]/3*2,[1 1 1 2]),4);
-        shifts_temp=shifts{end,2};
+                shifts_temp=cat(4,shifts{end-1:end,2});
+                shifts_temp=mean(shifts_temp.*reshape([1 2]/3*2,[1 1 1 2]),4);
+%         shifts_temp=shifts{end,2};
         dreg(:,:,floor(nF_dreg/2)+1:end)=apply_reg2P_shifts(dreg(:,:,floor(nF_dreg/2)+1:end),{shifts{end,1},shifts_temp});
     end
     if isfile
