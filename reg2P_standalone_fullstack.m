@@ -1,6 +1,6 @@
 function data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch)
 %reg2P_standalone_fullstack(data,batch_size,n_iter,bidi,n_ch,whichch)
-%data - X by Y by (C*T) frame stack
+%data - X by Y by (C*T) frame stack OR filename (tif)
 %batch_size - # of frames to process at one time on one computing core (default: 500)
 %bidi - whether to correct for bidirectional scanning (default: false)
 %n_ch - number of channels
@@ -12,7 +12,7 @@ function data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch)
 %
 %Please cite the original authors
 %
-%This implementation uses the parallel processing toolbox and has two
+%This implementation uses the parallel processing toolbox for matrix input and has two
 %advancements over the original suite2p scripts: 1. sub-pixel registration,
 %2. correcting for bidirectional scanning, accounting for differences in
 %offset along the x-axis
