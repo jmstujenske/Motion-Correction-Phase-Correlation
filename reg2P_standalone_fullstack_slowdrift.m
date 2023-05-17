@@ -1,4 +1,4 @@
-function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,whichch,memmap,blocksize)
+function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,whichch,memmap,numBlocks)
 %data_out=reg2P_standalone_fullstack_slowdrift(data,batch_size,n_iter,bidi,n_ch,whichch)
 %Motion corrects for line scanning and then drift corrects with a more fine
 %nonrigid correction every batch_size/2
@@ -9,7 +9,7 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %n_ch - number of channels
 %whichch - which channel to motion correct based on
 %memmap - try to memory map tiff and edit directly (default: false)
-%blocksize - two steps; default is [32 1;32 32];
+%numBlocks - two steps; default is [32 1;32 32];
 %
 %OUTPUT:
 %data_out - either the corrected frame stack OR new filename (tif)
@@ -36,10 +36,10 @@ end
 if nargin <6 || isempty(memmap)
     memmap=false;
 end
-if nargin<7 || isempty(blocksize)
-    blocksize=[32 1;20 20];
+if nargin<7 || isempty(numBlocks)
+    numBlocks=[32 1;20 20];
 end
-if numel(blocksize)<4
+if numel(numBlocks)<4
     error('For one step corretion, use reg2P_standalone_fullstack');
 end
 if nargin <3 || isempty(bidi)
@@ -78,11 +78,16 @@ if isfile
         fclose(fid);
         [folder,filename,ext]=fileparts(data);
         newfile=fullfile(folder,[filename,'_motcorr',ext]);
-        if len/1e9<3.99
-            TiffWriter=Fast_Tiff_Write(newfile,info(1).Xresolution,0,info(1).ImageDescription);
-        else
-            TiffWriter=Fast_BigTiff_Write(newfile,info(1).Xresolution,0,info(1).ImageDescription);
-        end
+            if isfield(info,'ImageDescription')
+                desc=info(1).ImageDescription;
+            else
+                desc=[];
+            end
+    if len/1e9<3.99
+        TiffWriter=Fast_Tiff_Write(newfile,info(1).Xresolution,0,desc);
+    else
+        TiffWriter=Fast_BigTiff_Write(newfile,info(1).Xresolution,0,desc);
+    end
         %tic;
     end
     
@@ -165,9 +170,9 @@ for rep=1:nreps
     
     %correct for scanning line shifts
     if isfile
-        [dreg]=reg2P_standalone_twostep(data_cell,mimg,false,blocksize(1,:),n_ch,whichch);
+        [dreg]=reg2P_standalone_twostep(data_cell,mimg,false,numBlocks(1,:),n_ch,whichch);
     else
-        [dreg]=reg2P_standalone_twostep(data_cell{rep},mimg,false,blocksize(1,:),n_ch,whichch);
+        [dreg]=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks(1,:),n_ch,whichch);
     end
     if rep==1
         mimg=mean(dreg(:,:,whichch:n_ch:end),3);
@@ -182,8 +187,8 @@ for rep=1:nreps
     %do not recalculate shifts if there is too little data at the end of
     %the file; otherwise calculate shifts
     if rep~=nreps || size(dreg,3)>=batch_size/2
-          [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,blocksize(2,:),1,1,10);
-          [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,blocksize(2,:),1,1,10);
+          [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10);
+          [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10);
         shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
     end
     

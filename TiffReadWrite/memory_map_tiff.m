@@ -16,7 +16,10 @@ function [m,n_ch,info]=memory_map_tiff(filename,opt,n_ch,read_only,numFrames)
 %
 %Output:
 %m - memory map
-
+[~,~,ext]=fileparts(filename);
+if ~strcmp(ext,'.tif') & ~strcmp(ext,'.tiff')
+    error('Wrong file format.');
+end
 if nargin<2 || isempty(opt)
     opt='channels';
 end

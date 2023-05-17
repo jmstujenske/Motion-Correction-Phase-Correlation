@@ -148,6 +148,11 @@ for i = 1:NT
     Im = data_orig(:,:,i);
     dreg(:,:,i)=imwarp(Im,repmat(reshape(ds_rigid(frame_num,:),[1 1 2]),size(data_smooth,1:2)));
 end
+if prod(numBlocks)==1
+    shifts={zeros(Ly,Lx),ds_rigid,[]};
+    dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
+    return;
+end
 data_orig=dreg; clear dreg;
 data_smooth=imgaussfilt(single(data_orig(:,:,whichch:n_ch:end)),.5); 
 % fraction of block of total image
@@ -442,7 +447,7 @@ dy = reshape(dy, Ly, Lx, []);
 % idy = repmat([1:Ly]', 1, Lx);
 % idx = repmat([1:Lx],  Ly, 1);
 if nargout>1
-    shifts={xyMask,ds};
+    shifts={xyMask,ds_rigid,ds};
 end
 clear xyMask ds
 dreg = zeros(size(data_orig), class_data);
