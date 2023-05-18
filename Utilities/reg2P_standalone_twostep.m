@@ -432,11 +432,15 @@ for b=1:size(ds,1)
     outlier=any(abs(ds(b,:,:))>=maxregshift(2),3);
     if any(outlier)
         if sum(~outlier)>=2
-    ds(b,outlier,1)=interp1(find(~outlier),ds(b,~outlier,1),find(outlier),'linear','extrap');
-    ds(b,outlier,2)=interp1(find(~outlier),ds(b,~outlier,2),find(outlier),'linear','extrap');
+            ds(b,outlier,1)=interp1(find(~outlier),ds(b,~outlier,1),find(outlier),'linear','extrap');
+            ds(b,outlier,2)=interp1(find(~outlier),ds(b,~outlier,2),find(outlier),'linear','extrap');
+        else
+            ds(b,:,:)=0;
         end
     end
 end
+        ds(isnan(ds) | isinf(ds))=0;
+
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
 
