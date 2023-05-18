@@ -429,7 +429,7 @@ end
 
 %loop through every block and remove outliers
 for b=1:size(ds,1)
-    outlier=any(ds(b,:,:)>=maxregshift(2),3);
+    outlier=any(abs(ds(b,:,:))>=maxregshift(2),3);
     if any(outlier)
         if sum(~outlier)>=2
     ds(b,outlier,1)=interp1(find(~outlier),ds(b,~outlier,1),find(outlier),'linear','extrap');
