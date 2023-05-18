@@ -2,6 +2,9 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %data_out=reg2P_standalone_fullstack_slowdrift(data,batch_size,n_iter,bidi,n_ch,whichch)
 %Motion corrects for line scanning and then drift corrects with a more fine
 %nonrigid correction every batch_size/2
+%The difference of this from reg2P_standalone_fullstack with two numBlocks
+%specified is that the slowdrift is smoothed to removed
+%
 %
 %data - X by Y by (C*T) frame stack OR filename (tif)
 %batch_size - # of frames to process at one time on one computing core (default: 500)
@@ -198,9 +201,9 @@ for rep=1:nreps
         %prior batch that still needs to be shifted
         
         %smooth over three batches
-        %         shifts_temp=cat(4,shifts{1:3,2});
-        %         shifts_temp=mean(shifts_temp,4);
-        shifts_temp=shifts{2,2};
+                shifts_temp=cat(4,shifts{1:3,2});
+                shifts_temp=mean(shifts_temp,4);
+%         shifts_temp=shifts{2,2};
         %apply shifts
         dreg_prior=apply_reg2P_shifts(dreg_prior,{shifts{2,1},shifts_temp});
         

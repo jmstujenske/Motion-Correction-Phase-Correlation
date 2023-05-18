@@ -10,7 +10,7 @@ function [dreg,shifts]=reg2P_standalone_twostep(data,mimg,kriging,numBlocks,n_ch
 %numBlocks - default is [32 1]
 %n_ch - how many channels in data
 %whichch - which channel to motion correct based on
-%maxregshift - maximum shift (default: [100 5])
+%maxregshift - maximum shift (default: [100 30])
 %Based on solution from Suite2p Matlab version, now made as a standable
 %implementation
 %https://github.com/cortex-lab/Suite2P
