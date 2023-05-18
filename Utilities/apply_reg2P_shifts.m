@@ -4,12 +4,7 @@ function dreg=apply_reg2P_shifts(data,varargin)
 %
 if iscell(varargin{1})
     xyMask=varargin{1}{1};
-    if length(varargin{1})>2
-        ds_rigid=varargin{1}{2};
-        ds=varargin{1}{3};
-    else
-        ds=varargin{1}{2};
-    end
+    ds=varargin{1}{2};
     if nargin>2
         pad=varargin{2};
     else
@@ -36,13 +31,6 @@ end
 Ly=Ly+pad*2;
 Lx=Lx+pad*2;
 data=pad_expand(data,pad);
-if exist('ds_rigid','var')
-    if ~isempty(ds)
-        ds=ds+reshape(ds_rigid,1,[],2);
-    else
-        ds=repmat(reshape(ds_rigid,1,[],2),prod(size(xyMask)),1,1);
-    end
-end
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
 
