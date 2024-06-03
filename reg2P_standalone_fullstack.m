@@ -26,7 +26,18 @@ function data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch,numBl
 %
 %J.M.Stujenske, April 2023
 %
+if ischar(data) %if filename provided instead of the data
+    %     [data,info]=bigread4(data);
+    isfile=true;
+else
+    isfile=false;
+end
 if nargin < 8
+    if isfile
+    folder=fileparts(data);
+    else
+        folder=dir;
+    end
     save_path=folder;
 end
 if nargin < 7 || isempty(use_par)
@@ -50,12 +61,7 @@ end
 if nargin<2 || isempty(batch_size)
     batch_size=500;
 end
-if ischar(data) %if filename provided instead of the data
-    %     [data,info]=bigread4(data);
-    isfile=true;
-else
-    isfile=false;
-end
+
 if isfile
     [folder,filename,ext]=fileparts(data);
 
@@ -182,6 +188,7 @@ if isfile
         for rep=1:nreps
             if memmap
                 data_cell=m.Data.allchans(:,:,(rep-1)*batch_size+1:(rep-1)*batch_size+min(batch_size,nFrames-batch_size*(rep-1)));
+                data_cell=permute(data_cell,[2 1 3]);
             else
                 data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
             end
