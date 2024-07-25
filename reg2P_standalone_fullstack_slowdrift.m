@@ -5,7 +5,6 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %The difference of this from reg2P_standalone_fullstack with two numBlocks
 %specified is that the slowdrift is smoothed to removed
 %
-%
 %data - X by Y by (C*T) frame stack OR filename (tif)
 %batch_size - # of frames to process at one time on one computing core (default: 500)
 %bidi - whether to correct for bidirectional scanning (default: false)
@@ -191,7 +190,9 @@ for rep=1:nreps
     
     %do not recalculate shifts if there is too little data at the end of
     %the file; otherwise calculate shifts
-    if rep~=nreps || size(dreg,3)>=batch_size/2
+    % if rep~=nreps || size(dreg,3)>=batch_size/2
+    if size(dreg,3)>=batch_size/2
+
           [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10);
           [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10);
         shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
