@@ -42,14 +42,17 @@ end
 if nargin<7 || isempty(numBlocks)
     numBlocks=[32 1;20 20];
 end
-if numel(numBlocks)<4
-    error('For one step corretion, use reg2P_standalone_fullstack');
-end
+
 if nargin <3 || isempty(bidi)
     bidi=false;
 end
 if nargin<2 || isempty(batch_size)
     batch_size=500;
+end
+if numel(numBlocks)<4
+    % error('For one step correction, use reg2P_standalone_fullstack');
+    data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch,numBlocks,true);
+    return;
 end
 if ischar(data) %if filename provided instead of the data
     %[data,info]=bigread4(data);
@@ -57,7 +60,6 @@ if ischar(data) %if filename provided instead of the data
 else
     isfile=false;
 end
-
 if isfile
     if memmap
         try
@@ -80,7 +82,7 @@ if isfile
         len=ftell(fid);
         fclose(fid);
         [folder,filename,ext]=fileparts(data);
-        newfile=fullfile(folder,[filename,'_motcorr',ext]);
+        newfile=fullfile(folder,[filename,'_sdmotcorr',ext]);
             if isfield(info,'ImageDescription')
                 desc=info(1).ImageDescription;
             else

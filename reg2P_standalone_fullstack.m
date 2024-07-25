@@ -32,7 +32,7 @@ if ischar(data) %if filename provided instead of the data
 else
     isfile=false;
 end
-if nargin < 8
+if nargin < 8 || isempty(save_path)
     if isfile
     folder=fileparts(data);
     else
