@@ -150,6 +150,7 @@ end
 % temp=reg2P_standalone(data2(:,:,frames),mimg,false);toc;
 shifts={[],[];[],[]};
 for rep=1:nreps
+    disp(['Processing Chunk ',num2str(rep),' of ',num2str(nreps)])
     %load a block of data
     if isfile
         if ~memmap
