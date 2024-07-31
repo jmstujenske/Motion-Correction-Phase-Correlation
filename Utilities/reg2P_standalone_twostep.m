@@ -287,7 +287,7 @@ for ib=1:nblocks
         lcorr  = min(maxregshift(2), floor(min(ly,lx)/2)-lpad);
         
         % only need a small kernel +/- lpad for smoothing
-        [x1,x2] = ndgrid([-lpad:lpad]);
+        [x1,x2] = ndgrid(-lpad:lpad);
         xt = [x1(:) x2(:)]';
         if useGPU
             xt = gpuArray(single(xt));
@@ -413,7 +413,7 @@ for ib=1:nblocks
             %             Corr(fi,ib)  = gather_try(cx);
             % otherwise just take peak of matrix
         else
-            cc0     = corrClipSmooth(floor(ly/2)+1+[-lcorr:lcorr],floor(lx/2)+1+[-lcorr:lcorr],:);
+            cc0     = corrClipSmooth(floor(ly/2)+1+(-lcorr:lcorr),floor(lx/2)+1+(-lcorr:lcorr),:);
             [cmax,iy]  = max(cc0,[],1);
             [~, ix]   = max(cmax,[],2);
             iy = reshape(iy(sub2ind([size(iy,2) size(iy,3)], ix(:), (1:size(iy,3))')),...

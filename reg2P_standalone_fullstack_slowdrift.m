@@ -119,17 +119,17 @@ if isfile
     if ~memmap
         template_frames=bigread4(data,1,min(500*n_ch,nFrames));
         template_frames=template_frames(:,:,whichch:n_ch:end);
-        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
         mimg=median(dreg,3);
     else
         template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
-        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
         mimg=median(dreg,3);
         mimg=mimg';
     end
 else
     template_frames=data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch));
-    [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+    [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
     mimg=median(dreg,3);
 end
 
@@ -225,7 +225,9 @@ for rep=1:nreps
         if isfile
             %write data to tiff file
             if ~memmap
-                for a=1:size(dreg_prior,3);TiffWriter.WriteIMG(dreg_prior(:,:,a)');end;
+                for a=1:size(dreg_prior,3)
+                    TiffWriter.WriteIMG(dreg_prior(:,:,a)');
+                end
             else
                 m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
             end
@@ -268,10 +270,14 @@ for rep=1:nreps
     if isfile
         %write the first half of the data to tif
         if ~memmap
-            for a=1:floor(nF_dreg/2);TiffWriter.WriteIMG(dreg(:,:,a)');end;
+            for a=1:floor(nF_dreg/2)
+                TiffWriter.WriteIMG(dreg(:,:,a)');
+            end
             %if it is the last batch, then write the rest of the data
             if rep==nreps
-                for a=floor(nF_dreg/2)+1:nF_dreg;TiffWriter.WriteIMG(dreg(:,:,a)');end;
+                for a=floor(nF_dreg/2)+1:nF_dreg
+                    TiffWriter.WriteIMG(dreg(:,:,a)');
+                end
             end
         else
             m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
@@ -299,16 +305,16 @@ else
     data=cat(3,dreg_full{:});
 end
 end
-
-function out=apply_col_shift(in,col_shift)
-[Ly,Lx,nFrames]=size(in);
-d_s=imresize(in,[Ly Lx*10]);
-d_s(2:2:end,max(1,1-col_shift*10):min(Lx*10,Lx*10-col_shift*10),:)=d_s(2:2:end,max(1,1+col_shift*10):min(Lx*10,Lx*10+col_shift*10),:);
-if col_shift<0
-    d_s(2:2:end,1:1-col_shift*10,:)=repmat(d_s(2:2:end,1,:),[1,1-col_shift*10 1]);
-else
-    d_s(2:2:end,Lx*10-col_shift*10:end,:)=repmat(d_s(2:2:end,Lx*10-col_shift*10,:),[1,1+col_shift*10 1]);
-end
-
-out=imresize(d_s,[Ly Lx]);
-end
+% 
+% function out=apply_col_shift(in,col_shift)
+% [Ly,Lx,nFrames]=size(in);
+% d_s=imresize(in,[Ly Lx*10]);
+% d_s(2:2:end,max(1,1-col_shift*10):min(Lx*10,Lx*10-col_shift*10),:)=d_s(2:2:end,max(1,1+col_shift*10):min(Lx*10,Lx*10+col_shift*10),:);
+% if col_shift<0
+%     d_s(2:2:end,1:1-col_shift*10,:)=repmat(d_s(2:2:end,1,:),[1,1-col_shift*10 1]);
+% else
+%     d_s(2:2:end,Lx*10-col_shift*10:end,:)=repmat(d_s(2:2:end,Lx*10-col_shift*10,:),[1,1+col_shift*10 1]);
+% end
+% 
+% out=imresize(d_s,[Ly Lx]);
+% end
