@@ -72,9 +72,10 @@ for i = 1:NT
         dx_i=dx(:,:,frame_num);
         dy_i=dy(:,:,frame_num);
     end
-    dreg(:,:,i)=imwarp(cast(Im,class_data),cat(3,dx_i,dy_i));
+    dreg(:,:,i)=imwarp(Im,cat(3,dx_i,dy_i));
 end
 else
     dreg=data;
 end
 dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
+dreg=cast(dreg,class_data);

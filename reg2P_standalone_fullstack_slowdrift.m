@@ -48,11 +48,11 @@ end
 if nargin<2 || isempty(batch_size)
     batch_size=500;
 end
-if numel(numBlocks)<4
-    % error('For one step correction, use reg2P_standalone_fullstack');
-    data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch,numBlocks,true);
-    return;
-end
+% if numel(numBlocks)<4
+%     % error('For one step correction, use reg2P_standalone_fullstack');
+%     data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch,numBlocks,true);
+%     return;
+% end
 if ischar(data) %if filename provided instead of the data
     %[data,info]=bigread4(data);
     isfile=true;
@@ -62,12 +62,13 @@ end
 if isfile
     if memmap
         try
-            [m,~,info]=memory_map_tiff(filename,'matrix',n_ch,false);
+            [m,~,info]=memory_map_tiff(data,'matrix',n_ch,false);
             Ly=info(1).ImageHeight;
             Lx=info(1).ImageWidth;
             nFrames=length(info);
             memmap=true;
         catch
+            warning('Memory mapping failed.')
             memmap=false;
         end
     end
@@ -114,18 +115,25 @@ if ~isfile
     data_cell(in)=[];
 end
 
-% mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 if isfile
     if ~memmap
-        mimg=bigread4(data,1,min(500*n_ch,nFrames*n_ch));
-        mimg=mean(mimg(:,:,whichch:n_ch:end),3);
+        template_frames=bigread4(data,1,min(500*n_ch,nFrames));
+        template_frames=template_frames(:,:,whichch:n_ch:end);
+        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        mimg=median(dreg,3);
     else
-        mimg=mean(m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
+        template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
+        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        mimg=median(dreg,3);
+        mimg=mimg';
     end
 else
-    mimg=mean(data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
-    clear data;
+    template_frames=data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch));
+    [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+    mimg=median(dreg,3);
 end
+
+
 if bidi
     [mimg,bidi_dx]=correct_bidi_across_x(mimg,1,1);
 end
@@ -160,13 +168,12 @@ for rep=1:nreps
             catch
                 [data_cell]=apply_bidi_correction(data_cell,bidi_dx,true); %low memory mode
             end
-            
         else
             frames=(rep-1)*batch_size+1:(rep-1)*batch_size+min(batch_size,nFrames-batch_size*(rep-1));
             try
-                [data_cell,bidi_dx]=correct_bidi_across_x(m.Data.allchans(:,:,frames),n_ch,whichch,true); %low memory mode
+                [data_cell,bidi_dx]=correct_bidi_across_x(permute(m.Data.allchans(:,:,frames),[2 1 3]),n_ch,whichch,true); %low memory mode
             catch
-                [data_cell]=apply_bidi_correction(m.Data.allchans(:,:,frames),bidi_dx,true); %low memory mode
+                [data_cell]=apply_bidi_correction(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,true); %low memory mode
             end
         end
     end
@@ -193,30 +200,34 @@ for rep=1:nreps
     %the file; otherwise calculate shifts
     % if rep~=nreps || size(dreg,3)>=batch_size/2
     if size(dreg,3)>=batch_size/2
-
+        if numel(numBlocks)>=4
           [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10);
           [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10);
         shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
+        end
     end
     
     %apply shifts
     if rep~=1
+
         %if not the first repetition, we have half of the data from the
         %prior batch that still needs to be shifted
         
         %smooth over three batches
+        if numel(numBlocks)>=4
                 shifts_temp=cat(4,shifts{1:3,2});
                 shifts_temp=mean(shifts_temp,4);
 %         shifts_temp=shifts{2,2};
         %apply shifts
         dreg_prior=apply_reg2P_shifts(dreg_prior,{shifts{2,1},shifts_temp});
+        end
         
         if isfile
             %write data to tiff file
             if ~memmap
                 for a=1:size(dreg_prior,3);TiffWriter.WriteIMG(dreg_prior(:,:,a)');end;
             else
-                m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=dreg_prior;
+                m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
             end
         else
             %prior batch data needs shifting, and we only saved the first
@@ -225,17 +236,21 @@ for rep=1:nreps
         end
         
         %smooth the first half of the current batch now
+        if numel(numBlocks)>=4  
                 shifts_temp=cat(4,shifts{2:4,2});
 %         shifts_temp=shifts{3,2};
                 shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
+        end
     else
         %if the first batch, then there is no prior to deal with
+        if numel(numBlocks)>=4
                 shifts_temp=cat(4,shifts{:,2});
 %         shifts_temp=shifts{3,2};
         
                 shifts_temp=mean(shifts_temp.*reshape([2 1]/3*2,[1 1 1 2]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
+        end
     end
     if rep~=nreps
         %if not the last batch, then cut data in half
@@ -243,10 +258,12 @@ for rep=1:nreps
     else
         %if it is the last batch, then we correct the last batch just based on
         %the last two corrections
+        if numel(numBlocks)>=4
                 shifts_temp=cat(4,shifts{end-1:end,2});
                 shifts_temp=mean(shifts_temp.*reshape([1 2]/3*2,[1 1 1 2]),4);
 %         shifts_temp=shifts{end,2};
         dreg(:,:,floor(nF_dreg/2)+1:end)=apply_reg2P_shifts(dreg(:,:,floor(nF_dreg/2)+1:end),{shifts{end,1},shifts_temp});
+        end
     end
     if isfile
         %write the first half of the data to tif
@@ -257,9 +274,9 @@ for rep=1:nreps
                 for a=floor(nF_dreg/2)+1:nF_dreg;TiffWriter.WriteIMG(dreg(:,:,a)');end;
             end
         else
-            m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=dreg(:,:,1:floor(nF_dreg/2));
+            m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
             if rep==nreps
-                m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=dreg(:,:,floor(nF_dreg/2)+1:end);
+                m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=permute(dreg(:,:,floor(nF_dreg/2)+1:end),[2 1 3]);
             end
         end
     else

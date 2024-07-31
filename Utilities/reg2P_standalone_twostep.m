@@ -1,7 +1,7 @@
 function [dreg,shifts]=reg2P_standalone_twostep(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift)
 %dreg=reg2P_standalone_twostep(data,mimg,kriging,numBlocks,n_ch,whichch)
 %rigid registration followed by nonrigid registration
-%may perform between than the onestep procedure if there are large rigid
+%may perform better than the onestep procedure if there are large rigid
 %movements
 %
 %data - X by Y by (C*T) frame stack
@@ -18,7 +18,7 @@ function [dreg,shifts]=reg2P_standalone_twostep(data,mimg,kriging,numBlocks,n_ch
 %Please cite the original authors
 %
 if nargin<7 || isempty(maxregshift)
-    maxregshift=[100 30];
+    maxregshift=[200 30];
 end
 if length(maxregshift)<2
     maxregshift=repmat(maxregshift,[1 2]);
@@ -45,32 +45,41 @@ smoothSigma = 1.15;
 pad=15;
 class_data=class(data);
 
-data=pad_expand(data,pad);
+NT = size(data,3);
 data_orig=data;
-[Ly, Lx, NT] = size(data_orig);
-
 data=data(:,:,whichch:n_ch:end);
-
+nFrames = size(data,3);
 data=single(data);
-
-
-
-[Ly,Lx,nFrames] = size(data);
-
 if nargin<2 || isempty(mimg)
     mimg=gen_template(data,min(1000,nFrames));
     %     mimg=pad_expand(mimg,pad);
     mimg=single(mimg);
 else
-    mimg=pad_expand(mimg,pad);
+    % mimg=pad_expand(mimg,pad);
     mimg=single(mimg);
 end
+[dreg,shifts_temp]=reg2P_standalone(data_orig,mimg,kriging,[1 1],n_ch,whichch,maxregshift(1));
+ds_rigid=shifts_temp{2};
+% [Ly,Lx,nFrames] = size(data);
+% 
+% if nargin<2 || isempty(mimg)
+%     mimg=gen_template(data,min(1000,nFrames));
+%     %     mimg=pad_expand(mimg,pad);
+%     mimg=single(mimg);
+% else
+%     mimg=pad_expand(mimg,pad);
+%     mimg=single(mimg);
+% end
+% data_orig=pad_expand(data,pad);
+% [Ly, Lx, nFrames] = size(data_orig);
+
+mimg=pad_expand(mimg,pad);
 mimg=imgaussfilt(mimg,.5);%-1.1*imgaussfilt(mimg,2);
 mimg(mimg<0)=0;
 
-data_smooth=imgaussfilt(data,.5);%-1.1*imgaussfilt(data,2);
+% data_smooth=imgaussfilt(data,.5);%-1.1*imgaussfilt(data,2);
 clear data
-data_smooth(data_smooth<0)=0;
+% data_smooth(data_smooth<0)=0;
 
 if nargin<4 || isempty(numBlocks)
     numBlocks = [32 1];
@@ -79,7 +88,7 @@ elseif length(numBlocks)==1
 end
 
 % Taper mask
-[ly,lx]=size(data_smooth,1:2);
+[ly,lx]=size(mimg,1:2);
 [ys, xs] = ndgrid(1:ly, 1:lx);
 ys = abs(ys - mean(ys(:)));
 xs = abs(xs - mean(xs(:)));
@@ -91,69 +100,80 @@ hgx = exp(-(((0:lx-1) - fix(lx/2))/smoothSigma).^2);
 hgy = exp(-(((0:ly-1) - fix(ly/2))/smoothSigma).^2);
 hg = hgy'*hgx;
 fhg = real(fftn(ifftshift(single(hg/sum(hg(:))))));
-eps0 = single(1e-10);
+% eps0 = single(1e-10);
 
-maskOffset = mean(mimg,'all')*(1 - maskMul);
+% maskOffset = mean(mimg,'all')*(1 - maskMul);
 
 % fft of reference image
-cfRefImg = conj(fftn(mimg));
-if phaseCorrelation
-    absRef   = abs(cfRefImg);
-    cfRefImg = cfRefImg./(eps0 + absRef) .* fhg;
-end
-batchSize=1000;
-nBatches = ceil(nFrames/batchSize);
-ds_rigid=zeros(nFrames,2);
-for bi = 1:nBatches
-    fi = ((bi - 1)*batchSize + 1):min(bi*batchSize, nFrames);
-    
-    if useGPU
-        batchData = gpuArray(single(data_smooth(:,:,fi)));
-    else
-        batchData = single(data_smooth(:,:,fi));
-    end
-    
-    corrMap = fft2(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, batchData)));
-    %     corrMap=single(batchData);
-    if phaseCorrelation
-        corrMap = bsxfun(@times, corrMap./(eps0 + abs(corrMap)), cfRefImg);
-    else
-        corrMap = bsxfun(@times, corrMap, cfRefImg);
-    end
-    
-    % compute correlation matrix
-    corrClip = real(ifft2(corrMap));
-    corrClip = fftshift(fftshift(corrClip, 1), 2);
-    corrClipSmooth = corrClip;
-    lpad   = 3;
-    lcorr  = min(maxregshift(1), floor(min(ly,lx)/2)-lpad);
-    
-    % only need a small kernel +/- lpad for smoothing
-    [x1,x2] = ndgrid([-lpad:lpad]);
-    xt = [x1(:) x2(:)]';
-    cc0 = corrClipSmooth(floor(ly/2)+1+[-lcorr:lcorr],floor(lx/2)+1+[-lcorr:lcorr],:);
-    [cmax,iy]  = max(cc0,[],1);
-    [~, ix]   = max(cmax,[],2);
-    iy = reshape(iy(sub2ind([size(iy,2) size(iy,3)], ix(:), (1:size(iy,3))')),...
-        1, 1, []);
-    
-    
-    
-    dv0 = [iy(:)-lcorr ix(:)-lcorr]-1;
-    ds_rigid(fi,:)  = gather_try(dv0);
-end
-dreg = zeros(size(data_orig), class_data);
-for i = 1:NT
-    frame_num=ceil(i/n_ch);
-    Im = data_orig(:,:,i);
-    dreg(:,:,i)=imwarp(Im,repmat(reshape(ds_rigid(frame_num,:),[1 1 2]),size(data_smooth,1:2)));
-end
-if prod(numBlocks)==1
-    shifts={zeros(Ly,Lx),ds_rigid,[]};
-    dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
-    return;
-end
-data_orig=dreg; clear dreg;
+% cfRefImg = conj(fftn(mimg));
+% if phaseCorrelation
+%     absRef   = abs(cfRefImg);
+%     cfRefImg = cfRefImg./(eps0 + absRef) .* fhg;
+% end
+% batchSize=1000;
+% nBatches = ceil(nFrames/batchSize);
+% ds_rigid=zeros(nFrames,2);
+% for bi = 1:nBatches
+%     fi = ((bi - 1)*batchSize + 1):min(bi*batchSize, nFrames);
+% 
+%     if useGPU
+%         batchData = gpuArray(single(data_smooth(:,:,fi)));
+%     else
+%         batchData = single(data_smooth(:,:,fi));
+%     end
+% 
+%     corrMap = fft2(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, batchData)));
+%     %     corrMap=single(batchData);
+%     if phaseCorrelation
+%         corrMap = bsxfun(@times, corrMap./(eps0 + abs(corrMap)), cfRefImg);
+%     else
+%         corrMap = bsxfun(@times, corrMap, cfRefImg);
+%     end
+% 
+%     % compute correlation matrix
+%     corrClip = real(ifft2(corrMap));
+%     corrClip = fftshift(fftshift(corrClip, 1), 2);
+%     corrClipSmooth = corrClip;
+%     lpad   = 5;
+%     lcorr  = min(maxregshift(1), floor(min(ly,lx)/2)-lpad);
+% 
+%     % only need a small kernel +/- lpad for smoothing
+%     [x1,x2] = ndgrid([-lpad:lpad]);
+%     xt = [x1(:) x2(:)]';
+%     cc0 = corrClipSmooth(floor(ly/2)+1+[-lcorr:lcorr],floor(lx/2)+1+[-lcorr:lcorr],:);
+%     [cmax,iy]  = max(cc0,[],1);
+%     [~, ix]   = max(cmax,[],2);
+%     iy = reshape(iy(sub2ind([size(iy,2) size(iy,3)], ix(:), (1:size(iy,3))')),...
+%         1, 1, []);
+% 
+% 
+% 
+%     dv0 = [iy(:)-lcorr ix(:)-lcorr]-1;
+%     ds_rigid(fi,:)  = gather_try(dv0);
+% end
+% dreg = zeros(size(data_orig), class_data);
+% for i = 1:nFrames
+%     frame_num=ceil(i/n_ch);
+%     Im = data_orig(:,:,i);
+%     dreg(:,:,i)=imwarp(Im,repmat(reshape(ds_rigid(frame_num,:),[1 1 2]),size(data_smooth,1:2)));
+% end
+% if prod(numBlocks)==1
+%     shifts={zeros(Ly,Lx),ds_rigid,[]};
+%     dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
+%     return;
+% end
+% if nargin<2 || isempty(mimg)
+%     % mimg=gen_template(dreg,min(1000,nFrames));
+%     %     mimg=pad_expand(mimg,pad);
+%     mimg=single(mean(dreg,3));
+%     mimg=imgaussfilt(mimg,.5);%-1.1*imgaussfilt(mimg,2);
+%     mimg(mimg<0)=0;
+% end
+
+data_orig=pad_expand(dreg,pad); clear dreg;
+[Ly, Lx] = size(data_orig,1:2);
+
+% data_orig=dreg; clear dreg;
 data_smooth=imgaussfilt(single(data_orig(:,:,whichch:n_ch:end)),.5); 
 % fraction of block of total image
 bfrac     = 1./max(2,ceil((numBlocks-3)/3));
@@ -472,11 +492,8 @@ for i = 1:NT
     dreg(:,:,i)=imwarp(Im,cat(3,dx_i,dy_i));
 end
 dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
-
-
 % if nargin > 2 && removeMean
 %     dv = bsxfun(@minus, dv, mean(dv,1));
 % end
-
-% keyboard
 % data(1:pad,1:pad,:)=[data(pad+:pad*2,pad+1:-1:2,:)
+% keyboard;

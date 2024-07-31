@@ -105,14 +105,20 @@ nreps=ceil(nFrames/batch_size);
 %cut data up into cells
 if isfile
     if ~memmap
-        mimg=bigread4(data,1,min(500*n_ch,nFrames));
-        mimg=mean(mimg(:,:,whichch:n_ch:end),3);
+        template_frames=bigread4(data,1,min(500*n_ch,nFrames));
+        template_frames=template_frames(:,:,whichch:n_ch:end);
+        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        mimg=median(dreg,3);
     else
-        mimg=mean(m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames)),3);
+        template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
+        [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+        mimg=median(dreg,3);
         mimg=mimg';
     end
 else
-    mimg=mean(data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch)),3);
+    template_frames=data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch));
+    [dreg,shifts]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+    mimg=median(dreg,3);
     if nFrames==nreps*batch_size
         data_cell=mat2cell(data,Ly,Lx,batch_size*ones(1,nreps));
     else
@@ -123,8 +129,6 @@ else
     in=squeeze(cellfun(@isempty,data_cell));
     data_cell(in)=[];
 end
-
-
 % mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 
 if bidi
@@ -170,10 +174,10 @@ if isfile
             parfor rep=1:(min(nw,nreps-outrep+1))
                 data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true); %low memory mode
                 dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
-                if size(numBlocks,1)>1
-                [~,shifts]=reg2P_standalone(mean(dreg{rep},3),mimg,false,numBlocks(2,:),n_ch,whichch,10);
-                dreg{rep}=apply_reg2P_shifts(dreg{rep},shifts);
-                end
+                % if size(numBlocks,1)>1
+                % [~,shifts]=reg2P_standalone(mean(dreg{rep},3),mimg,false,numBlocks(2,:),n_ch,whichch,10);
+                % dreg{rep}=apply_reg2P_shifts(dreg{rep},shifts);
+                % end
             end
             for a=1:nw
                 if ~isempty(dreg{a})
