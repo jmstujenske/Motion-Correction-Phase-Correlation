@@ -59,7 +59,9 @@ else
     mimg=single(mimg);
 end
 [dreg,shifts_temp]=reg2P_standalone(data_orig,mimg,kriging,[1 1],n_ch,whichch,maxregshift(1));
+
 ds_rigid=shifts_temp{2};
+if prod(numBlocks)>1
 % [Ly,Lx,nFrames] = size(data);
 % 
 % if nargin<2 || isempty(mimg)
@@ -492,6 +494,11 @@ for i = 1:NT
     dreg(:,:,i)=imwarp(Im,cat(3,dx_i,dy_i));
 end
 dreg=dreg(pad+1:end-pad,pad+1:end-pad,:);
+else
+    if nargout>1
+    shifts={shifts_temp{1},shifts_temp{2},[]};
+    end
+end
 % if nargin > 2 && removeMean
 %     dv = bsxfun(@minus, dv, mean(dv,1));
 % end

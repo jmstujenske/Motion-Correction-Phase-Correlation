@@ -51,10 +51,10 @@ for i = 1:NT
     data(:,:,i)=imwarp(Im,repmat(ds_rigid(1,frame_num,:),size(data,1:2)));
 end
 end
+class_data=class(data);
 if ~isempty(ds)
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
-class_data=class(data);
 dx = reshape(dx, Ly, Lx, []);
 dy = reshape(dy, Ly, Lx, []);
 nshifts=size(dx,3);

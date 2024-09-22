@@ -41,7 +41,11 @@ end
 if nargin<7 || isempty(numBlocks)
     numBlocks=[32 1;20 20];
 end
-
+if numel(numBlocks)>=4
+    slowdriftmode=true;
+else
+    slowdriftmode=false;
+end
 if nargin <3 || isempty(bidi)
     bidi=false;
 end
@@ -62,10 +66,12 @@ end
 if isfile
     if memmap
         try
-            [m,~,info]=memory_map_tiff(data,'matrix',n_ch,false);
+            % [m,~,info]=memory_map_tiff(data,'matrix',n_ch,false);
+            info=readtifftags(data);
             Ly=info(1).ImageHeight;
             Lx=info(1).ImageWidth;
             nFrames=length(info);
+            [m]=memory_map_tiff(data,'matrix',1,false,nFrames,nFrames);
             memmap=true;
         catch
             warning('Memory mapping failed.')
@@ -122,6 +128,7 @@ if isfile
         [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
         mimg=median(dreg,3);
     else
+
         template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
         [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
         mimg=median(dreg,3);
@@ -200,7 +207,7 @@ for rep=1:nreps
     %the file; otherwise calculate shifts
     % if rep~=nreps || size(dreg,3)>=batch_size/2
     if size(dreg,3)>=batch_size/2
-        if numel(numBlocks)>=4
+        if slowdriftmode
           [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10);
           [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10);
         shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
@@ -214,7 +221,7 @@ for rep=1:nreps
         %prior batch that still needs to be shifted
         
         %smooth over three batches
-        if numel(numBlocks)>=4
+        if slowdriftmode
                 shifts_temp=cat(4,shifts{1:3,2});
                 shifts_temp=mean(shifts_temp,4);
 %         shifts_temp=shifts{2,2};
@@ -238,7 +245,7 @@ for rep=1:nreps
         end
         
         %smooth the first half of the current batch now
-        if numel(numBlocks)>=4  
+        if slowdriftmode  
                 shifts_temp=cat(4,shifts{2:4,2});
 %         shifts_temp=shifts{3,2};
                 shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
@@ -246,7 +253,7 @@ for rep=1:nreps
         end
     else
         %if the first batch, then there is no prior to deal with
-        if numel(numBlocks)>=4
+        if slowdriftmode
                 shifts_temp=cat(4,shifts{:,2});
 %         shifts_temp=shifts{3,2};
         
@@ -260,7 +267,7 @@ for rep=1:nreps
     else
         %if it is the last batch, then we correct the last batch just based on
         %the last two corrections
-        if numel(numBlocks)>=4
+        if slowdriftmode
                 shifts_temp=cat(4,shifts{end-1:end,2});
                 shifts_temp=mean(shifts_temp.*reshape([1 2]/3*2,[1 1 1 2]),4);
 %         shifts_temp=shifts{end,2};
