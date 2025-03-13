@@ -168,7 +168,7 @@ if isfile
 %                     data_cell{rep}=reshape(data_cell{rep},Lx,Ly,[]);
                     data_cell{rep}=permute(data_cell{rep},[2 1 3]);
                 else
-                    data_cell=bigread4(data,(rep+outrep-2)*batch_size+1,min(batch_size,nFrames-batch_size*(rep+outrep-2)));
+                    data_cell{rep}=bigread4(data,(rep+outrep-2)*batch_size+1,min(batch_size,nFrames-batch_size*(rep+outrep-2)));
                 end
             end
             parfor rep=1:(min(nw,nreps-outrep+1))
@@ -181,7 +181,6 @@ if isfile
             end
             for a=1:nw
                 if ~isempty(dreg{a})
-
                     for f=1:size(dreg{a},3)
                         TiffWriter.WriteIMG(dreg{a}(:,:,f)');
                     end
