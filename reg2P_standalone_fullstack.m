@@ -16,7 +16,7 @@ function data=reg2P_standalone_fullstack(data,batch_size,bidi,n_ch,whichch,numBl
 %implementation
 %https://github.com/cortex-lab/Suite2P
 %
-%Please cite the original authors
+%Please also cite the original authors.
 %
 %This implementation uses the parallel processing toolbox for matrix input
 %and has three
