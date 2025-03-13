@@ -20,7 +20,7 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %implementation
 %https://github.com/cortex-lab/Suite2P
 %
-%Please cite the original authors and acknowledge our contribution.
+%Please also cite the original authors.
 %
 %This implementation uses the parallel processing toolbox and has two
 %advancements over the original suite2p scripts: 1. sub-pixel registration,
