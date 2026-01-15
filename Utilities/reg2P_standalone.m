@@ -1,4 +1,4 @@
-function [dreg_full,shifts]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick)
+function [dreg_full,shifts]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg)
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %data - X by Y by (C*T) frame stack
 %mimg - template image (default: 1000 frame average)
@@ -28,6 +28,9 @@ subpixel = min(10, subpixel);
 
 eps0 = single(1e-10);
 
+if nargin<10 || isempty(use_subpixel_reg)
+    use_subpixel_reg=true;
+end
 if nargin<9 || isempty(quick)
     quick=false;
 end
@@ -46,6 +49,9 @@ end
 
 if nargin<3 ||isempty(kriging)
     kriging=false;
+end
+if nargin<4 || isempty(numBlocks)
+    numBlocks=[1 1];
 end
 
         % function [y,x,m]=cross_corr_memory(block_size)
@@ -97,7 +103,8 @@ quick=false;
 end
 if quick
     if nargin<2 || isempty(mimg)
-        refImg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nf/n_ch));
+        % refImg=gen_mimg(data,whichch,n_ch,n_Frames_template);
+        refImg=mean(data(:,:,whichch:n_ch:end),3);
     else
         refImg=mimg;
     end
@@ -123,19 +130,21 @@ if quick
             % x=ds(:,:,2);
             % y=ds(:,:,1);
 
-        x=(x-median(x));
-        y=(y-median(y));
+        % x=(x-median(x));
+        % y=(y-median(y));
                     m_smooth=sgolayfilt(double(m),3,floor(fs/2)*2+1);
             m_smooth=m_smooth-movmax(sgolayfilt(m_smooth,3,floor(fs/2)*2+1),[fs*3 0]);
-            th=multithresh(m_smooth);
-data=apply_rigid_dx(data,x,y,n_ch,false);
+            th=multithresh(m_smooth)*.8;
+data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg);
 % ds_rigid=cat(3,y(:)',x(:)');
-if prod(numBlocks)==1
-    dreg_full=data;
-    shifts={[],ds_rigid};
-    return;
-end
-movements=m_smooth<th; %only need to apply non-rigid to cases where the maximum correlation after rigid correction dips below expected
+% if prod(numBlocks)==1
+%     dreg_full=data;
+%     shifts={[],ds_rigid};
+%     return;
+% end
+movements=m_smooth<th | sqrt(x.^2+y.^2)>2; %only need to apply non-rigid to
+% cases where the maximum correlation after rigid correction dips below
+% expected, or large displacements, to be conservative
 movements_pad=find(conv(movements,ones(1,max(ceil(fs/4),3)),'same')>0);
 clear movements
 movements_pad=(movements_pad(:)-1)*n_ch+(1:n_ch)*n_ch;
@@ -144,31 +153,30 @@ if isempty(movements_pad)
     shifts=[];
     return;
 end
-data_input=data;
-data=data(:,:,movements_pad);
+data_sub=data(:,:,movements_pad);
 else
-    data_input=data;
+    data_sub=data;
     movements_pad=1:size(data,3);
 end
 
 
 pad=0;
-class_data=class(data);
-data_orig=data;
+class_data=class(data_sub);
+data_movtrunc_allch=data_sub;
 
-data=data(:,:,whichch:n_ch:end);
-data=single(data);
-data=pad_expand(data,pad);
+data_sub=data_sub(:,:,whichch:n_ch:end);
+data_sub=single(data_sub);
+data_sub=pad_expand(data_sub,pad);
 
-[Ly,Lx,nFrames] = size(data);
+[Ly,Lx,nFrames] = size(data_sub);
 
 if nargin<2 || isempty(mimg)
     if quick
         channel_idx=whichch:n_ch:nf;
-        mimg=gen_template(data_input(:,:,channel_idx(setdiff(1:nf,movements_pad))),min(1000,nFrames));
+        mimg=gen_template(data(:,:,channel_idx(setdiff(1:nf,movements_pad))),min(1000,nFrames));
         mimg=pad_expand(mimg,pad);
     else
-        mimg=gen_template(data,min(1000,nFrames));
+        mimg=gen_template(data_sub,min(1000,nFrames));
     end
     mimg=single(mimg);
 else
@@ -180,7 +188,35 @@ mimg(mimg<0)=0;
 
 % data_smooth=imgaussfilt(data,.5);%-1.1*imgaussfilt(data,2);
 % clear data
-data(data<0)=0;
+data_sub(data_sub<0)=0;
+
+[ds_rigid2] = register_blocks_fft_subpixel( ...
+    data_sub, mimg,[], ...
+    maxregshift, subpixel, ...
+    smoothSigma, maskSlope, ...
+    phaseCorrelation, kriging, ...
+    useGPU, eps0,1000,false);
+    % xyMask_rigid = make_xyMask(size(data,1), size(data,2), [1 1]);
+    % [y,x]=ds_to_dxy(xyMask_rigid,ds,size(data,1:2));
+    [y,x]=ds_to_dxy([],ds_rigid2,size(data,1:2));
+
+            % x=ds(:,:,2);
+            % y=ds(:,:,1);
+
+        % x=(x-median(x));
+        % y=(y-median(y));
+data_sub=apply_rigid_dx(data_sub,x,y,n_ch,use_subpixel_reg);
+if quick
+ds_rigid(:,movements_pad,:)=ds_rigid(:,movements_pad,:)+ds_rigid2;
+else
+    ds_rigid=ds_rigid2;
+end
+clear ds_rigid2
+if prod(numBlocks)==1
+    dreg_full=data;
+    shifts={[],ds_rigid};
+    return;
+end
 
 if nargin<4 || isempty(numBlocks)
     numBlocks = [32 1];
@@ -192,15 +228,15 @@ nblocks = prod(numBlocks);
 xyMask = make_xyMask(Ly, Lx, numBlocks);   
 
     ds = register_blocks_fft_subpixel( ...
-    data, mimg,numBlocks, ...
+    data_sub, mimg,numBlocks, ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,5000,true);
+    useGPU, eps0,5000,false);
     %loop through every block and remove outliers
-NT = size(data_orig,3);
-[Ly,Lx]=size(data,1:2);
-clear data
+NT = size(data_movtrunc_allch,3);
+[Ly,Lx]=size(data_sub,1:2);
+clear data_sub
 % dreg = zeros([Ly Lx], class_data);
 [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
 
@@ -209,25 +245,30 @@ if nargout>1
         ds_full=repmat(ds_rigid,nblocks,1,1);
         ds_full(:,movements_pad,:)=ds_full(:,movements_pad,:)+ds;
         ds=ds_full;
-        shifts={xyMask,ds_rigid,ds};
-    else
-        shifts={xyMask,ds};
     end
 end
+shifts={xyMask,ds};
+
 clear xyMask ds
 % for idx = 1:NT
 %     frame_num=ceil(idx/n_ch);
-%     Im = data_orig(:,:,idx);
+%     Im = data_movtrunc_allch(:,:,idx);
 %     Im=pad_expand(Im,pad);
 %     dx_i=dx(:,:,frame_num);
 %     dy_i=dy(:,:,frame_num);
 %     dreg(:,:,idx)=imwarp(Im,cat(3,dx_i,dy_i),'linear');
 % end
-dreg=apply_nonrigid_dx(data_orig,dx,dy,n_ch,false,pad);
-dreg_full=zeros(size(data_input),class_data);
+        if size(dx,1)==1 || size(dx,2)==1
+            dreg=apply_rigid_dx(data_movtrunc_allch,dx,dy,n_ch,use_subpixel_reg);
+        else
+            dreg=apply_nonrigid_dx(data_movtrunc_allch,dx,dy,n_ch,use_subpixel_reg,pad);
+        end
+
+% dreg=apply_nonrigid_dx(data_movtrunc_allch,dx,dy,n_ch,false,pad);
+dreg_full=zeros(size(data),class_data);
 
 full_mov=reshape(movements_pad+(0:n_ch-1),[],1);
-dreg_full(:,:,setdiff(1:nf,full_mov))=data_input(:,:,setdiff(1:nf,full_mov));
+dreg_full(:,:,setdiff(1:nf,full_mov))=data(:,:,setdiff(1:nf,full_mov));
 dreg_full(:,:,full_mov)=dreg;
 end
 
@@ -393,6 +434,7 @@ lx_old = -1;
 for ib = 1:nblocks
 
     refImg = mimgB{ib};
+    refImg = refImg - mean(refImg,'all');
     subdata = data(yBL{ib}, xBL{ib}, :);
     subdata = imgaussfilt(subdata, 0.5, 'Padding', 'symmetric');
 
@@ -478,20 +520,26 @@ for ib = 1:nblocks
         else
             batchData = single(subdata(:,:,fi));
         end
-
+if numel(batchData)>532*532*5000
+    useSVD=true; %force SVD on if data is too large
+end
 if useSVD
-    K_b=min(100,length(fi));
-
+    % K_b=min(100,length(fi));
+    K_b=max(10,ceil(length(fi)/50));
     if K_b==length(fi)
+        K_b=0;
         useSVD=false;
     end
-end
-if useSVD
-    cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
 else
-    cc0=calc_correlation(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, batchData)),...
-        cfRefImg,fhg,eps0,lcorr,phaseCorrelation);
+    K_b=0;
 end
+
+% if useSVD
+    % cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
+% else
+    cc0=calc_correlation(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, batchData)),...
+        cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
+% end
         % --- subpixel estimation ---
         if subpixel > 1
             [~,ii] = max(reshape(cc0,[],numel(fi)),[],1);
@@ -688,13 +736,15 @@ Lx=sz(2);
 if size(ds,1)==1 || size(ds,2)==1
     dx = ds(:,:,2);
     dy = ds(:,:,1);
+    dx = dx-round(median(dx,'all'));
+    dy = dy-round(median(dy,'all'));
     return;
 end
 try
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
-dx = dx-median(dx,'all');
-dy = dy-median(dy,'all');
+dx = dx-round(median(dx,'all'));
+dy = dy-round(median(dy,'all'));
 catch
     batch_size=1000;
     n_rep=size(xyMask,1);
@@ -719,16 +769,25 @@ if nargin<7 || isempty(K_b)
     K_b=0;
 end
 [ly,lx]=size(batchData,1:2);
+batchData=batchData-mean(batchData,1:2);
 if K_b>0
-        [U,S,V] = bksvd(reshape(batchData,[],size(batchData,3)), K_b, [], [], true);
+        if size(batchData,3)>1000
+        [U,S,V] = bksvd(reshape(batchData,[],size(batchData,3)), K_b);
+        else
+            %for <1000 frames, 512x512 pixels, svdecon is faster
+        [U,S,V] = svdecon(reshape(batchData,[],size(batchData,3)));
+            U=U(:,1:K_b);
+            S=S(1:K_b,1:K_b);
+            V=V(:,1:K_b);
+        end
         corrMap=fft2(reshape(U*S,ly,lx,[]));
 
-        % if phaseCorrelation
-        %     corrMap = bsxfun(@times, ...
-        %         corrMap ./ (eps0 + abs(corrMap)) .* fhg, cfRefImg);
-        % else
+        if phaseCorrelation
+            corrMap = bsxfun(@times, ...
+                corrMap ./ (eps0 + abs(corrMap)) .* fhg, cfRefImg);
+        else
             corrMap = bsxfun(@times, corrMap, cfRefImg);
-        % end
+        end
 
         corrClip = real(ifft2(corrMap));
         corrClip = fftshift(fftshift(corrClip,1),2);
@@ -741,7 +800,6 @@ if K_b>0
 Mode_cc0 = reshape(Mode_cc0,[],K_b);
 % VS = V * S;
 % cc0=Mode_cc0*VS';
-VS = V * S;
 cc0=Mode_cc0*V';
 cc0=reshape(cc0,lcorr*2+1,lcorr*2+1,[]);
 
@@ -774,4 +832,14 @@ else
 end
 
 
+end
+
+function refImg=gen_mimg(data,whichch,n_ch,n_Frames_template)
+        div=nf/n_ch/n_Frames_template;
+        first=floor(div/2)+1;
+        % div=floor(div);
+        frames=(round(first:div:nf/n_ch)-1)*n_ch+whichch;
+        % refImg=gen_template(data(:,:,whichch:n_ch:n_ch*100),min(100,nf/n_ch));
+        small_corr_stack=reg2P_standalone(data(:,:,frames),nanmean(data(:,:,frames),3));
+        refImg=nanmean(small_corr_stack,3);
 end

@@ -129,6 +129,24 @@ batch_size=min(batch_size,nFrames);
 nreps=ceil(nFrames/batch_size);
 
 %cut data up into cells
+
+if isfile
+    if ~memmap
+        template_frames=bigread4(data,1,min(500*n_ch,nFrames));
+        template_frames=template_frames(:,:,whichch:n_ch:end);
+    else
+        template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
+        template_frames=permute(template_frames,[2 1 3]);
+    end
+else
+    template_frames=data(:,:,whichch:n_ch:min(500*n_ch,nFrames));
+end
+        if bidi
+            [template_frames,bidi_dx]=correct_bidi_across_x(template_frames,1,1);
+        end
+    [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
+    mimg=median(dreg,3);
+
 if ~isfile
     if nFrames==nreps*batch_size
         data_cell=mat2cell(data,Ly,Lx,batch_size*ones(1,nreps));
@@ -141,48 +159,16 @@ if ~isfile
     clear data %data is now redundant
 end
 
-if isfile
-    if ~memmap
-        template_frames=bigread4(data,1,min(500*n_ch,nFrames));
-        template_frames=template_frames(:,:,whichch:n_ch:end);
-        [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
-        mimg=median(dreg,3);
-    else
-
-        template_frames=m.Data.allchans(:,:,whichch:n_ch:min(500*n_ch,nFrames));
-        [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
-        mimg=median(dreg,3);
-        mimg=mimg';
-    end
-else
-    template_frames=data(:,:,whichch:n_ch:min(500*n_ch,nFrames*n_ch));
-    [dreg]=reg2P_standalone(template_frames,median(template_frames,3),[],[1 1],1,1,200);
-    mimg=median(dreg,3);
-end
-
-
-if bidi
-    [mimg,bidi_dx]=correct_bidi_across_x(mimg,1,1);
-end
 if bidi && ~isfile
-    % [col_shift] = correct_bidirectional_offset(data,100);
-    % mimg=apply_col_shift(mimg,col_shift);
     parfor (rep=1:nreps,use_par)
-        %         data_cell{rep}=apply_col_shift(data_cell{rep},col_shift);
-        data_cell{rep}=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);
-        %       data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true);
-        
+        data_cell{rep}=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);        
     end
 end
-% dreg=zeros(Ly,Lx,nFrames,'single');
-% dims=size(data2);
-% options_rigid = NoRMCorreSetParms('d1',size(data2,1),'d2',size(data2,2),'bin_width',200,'max_shift',15,'us_fac',50,'init_batch',200);
-% options_nonrigid = NoRMCorreSetParms('d1',dims(1),'d2',dims(2),'grid_size',[64,64],'mot_uf',4,'bin_width',800,'max_shift',[2 2],'max_dev',[50 50],'us_fac',50,'init_batch',100,'shifts_method','cubic');
+
 if ~isfile
     dreg_full=cell(nreps,1);
 end
-% frames=1+batch_size*(rep-1):min(batch_size*rep,nFrames);
-% temp=reg2P_standalone(data2(:,:,frames),mimg,false);toc;
+
 shifts={[],[];[],[]};
 for rep=1:nreps
     disp(['Processing Chunk ',num2str(rep),' of ',num2str(nreps)])
@@ -190,26 +176,12 @@ for rep=1:nreps
     if isfile
         if ~memmap
             data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
-            % try
-            %     [data_cell,bidi_dx]=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
-            % catch
-                % [data_cell]=apply_bidi_correction(data_cell,bidi_dx,true); %low memory mode
-                data_cell=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);
-
-            % end
+            data_cell=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);
         else
             frames=(rep-1)*batch_size+1:(rep-1)*batch_size+min(batch_size,nFrames-batch_size*(rep-1));
-            % try
-            %     [data_cell,bidi_dx]=correct_bidi_across_x(permute(m.Data.allchans(:,:,frames),[2 1 3]),n_ch,whichch,true); %low memory mode
-            % catch
-                % [data_cell]=apply_bidi_correction(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,true); %low memory mode
             data_cell=apply_bidi_correction_direct(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,n_ch,true,length(bidi_dx)/Lx);
-
-            % end
         end
     end
-    
-    
     
     %correct for scanning line shifts
     if isfile
@@ -221,14 +193,11 @@ for rep=1:nreps
         dreg=reg2P_standalone(data_cell{rep},mimg,false,numBlocks(1,:),n_ch,whichch,[],fs,true);
         data_cell{rep}=[];%delete data that we are done with
     end
-    if rep==1
-        mimg=mean(dreg(:,:,whichch:n_ch:end),3);
-    end
+
     %     shifts{1}=cat(1,shifts{1},shift_temp_first);
     nF_dreg=size(dreg,3);
     %correct for bigger distortions, which only really occur gradually over
-    %time
-    %break into halves, and then we will smooth over three half-batch weighted running
+    %time, by breaking into halves, and then we will smooth over three half-batch weighted running
     %average
     
     %do not recalculate shifts if there is too little data at the end of
@@ -244,14 +213,13 @@ for rep=1:nreps
     
     %apply shifts
     if rep~=1
-
         %if not the first repetition, we have half of the data from the
         %prior batch that still needs to be shifted
         
         %smooth over three batches
         if slowdriftmode
                 shifts_temp=cat(4,shifts{1:3,2});
-                shifts_temp=mean(shifts_temp,4);
+                shifts_temp=sum(shifts_temp.*reshape([1 2 1]/4,[1 1 1 3]),4);
 %         shifts_temp=shifts{2,2};
         %apply shifts
         dreg_prior=apply_reg2P_shifts(dreg_prior,{shifts{2,1},shifts_temp});
@@ -276,7 +244,7 @@ for rep=1:nreps
         if slowdriftmode  
                 shifts_temp=cat(4,shifts{2:4,2});
 %         shifts_temp=shifts{3,2};
-                shifts_temp=mean(shifts_temp.*reshape([1 2 1]/4*3,[1 1 1 3]),4);
+                shifts_temp=sum(shifts_temp.*reshape([1 2 1]/4,[1 1 1 3]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
         end
     else
@@ -285,9 +253,16 @@ for rep=1:nreps
                 shifts_temp=cat(4,shifts{:,2});
 %         shifts_temp=shifts{3,2};
         
-                shifts_temp=mean(shifts_temp.*reshape([2 1]/3*2,[1 1 1 2]),4);
+                shifts_temp=sum(shifts_temp.*reshape([2 1]/3,[1 1 1 2]),4);
         dreg(:,:,1:floor(nF_dreg/2))=apply_reg2P_shifts(dreg(:,:,1:floor(nF_dreg/2)),{shifts{3,1},shifts_temp});
         end
+    end
+    
+    %update template in an ongoing manner
+    if rep==1
+        mimg=mean(dreg(:,:,whichch:n_ch:end),3);
+    else
+    mimg=nanmean(dreg_prior,3)/2+nanmean(dreg(:,:,1:floor(nF_dreg/2)),3)/2;
     end
     if rep~=nreps
         %if not the last batch, then cut data in half
