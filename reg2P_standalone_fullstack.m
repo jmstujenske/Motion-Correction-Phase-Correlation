@@ -40,7 +40,7 @@ if nargin < 8 || isempty(save_path)
     end
     save_path=folder;
 end
-if nargin < 7 || isempty(use_par)
+if nargin < 7 || isempty(use_par) || ~use_par
     use_par=0;
 end
 if use_par
@@ -61,7 +61,10 @@ end
 if nargin<2 || isempty(batch_size)
     batch_size=500;
 end
-
+if numel(numBlocks)>2
+    [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,whichch,true,numBlocks,use_par);
+    return;
+end
 if isfile
     [folder,filename,ext]=fileparts(data);
 
@@ -132,15 +135,15 @@ end
 % mimg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nFrames));
 
 if bidi
-    [mimg]=correct_bidi_across_x(mimg,1,1);
+    [mimg,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,true,1);
 end
 if bidi && ~isfile
     % [col_shift] = correct_bidirectional_offset(data,100);
     % mimg=apply_col_shift(mimg,col_shift);
-
     for rep=1:nreps
         %         data_cell{rep}=apply_col_shift(data_cell{rep},col_shift);
-        data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch);
+        % data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch);
+        data_cell{rep}=apply_bidi_correction_direct(data_cell{rep},dx_bidi,n_ch,true,1);
     end
 end
 % dreg=zeros(Ly,Lx,nFrames,'single');
@@ -170,14 +173,25 @@ if isfile
                 else
                     data_cell{rep}=bigread4(data,(rep+outrep-2)*batch_size+1,min(batch_size,nFrames-batch_size*(rep+outrep-2)));
                 end
+                if bidi
+                    data_cell{rep}=apply_bidi_correction_direct(data_cell{rep},dx_bidi,n_ch,true,1);
+                end
             end
-            parfor rep=1:(min(nw,nreps-outrep+1))
-                data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true); %low memory mode
+            try
+            parfor (rep=1:(min(nw,nreps-outrep+1)),use_par)
+                % data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true); %low memory mode
+
                 dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
                 % if size(numBlocks,1)>1
                 % [~,shifts]=reg2P_standalone(mean(dreg{rep},3),mimg,false,numBlocks(2,:),n_ch,whichch,10);
                 % dreg{rep}=apply_reg2P_shifts(dreg{rep},shifts);
                 % end
+            end
+            catch
+                use_par=false;
+             for rep=1:(min(nw,nreps-outrep+1))
+                dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
+            end
             end
             for a=1:nw
                 if ~isempty(dreg{a})
@@ -195,14 +209,22 @@ if isfile
             else
                 data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
             end
-            data_cell=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
+            % data_cell=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
+            data_cell=apply_bidi_correction_direct(data_cell,dx_bidi,n_ch,true,1);
             dreg=reg2P_standalone_twostep(data_cell,mimg,false,numBlocks,n_ch,whichch);
             for a=1:size(dreg,3);TiffWriter.WriteIMG(dreg(:,:,a)');end;
         end
     end
 else
+    try
     parfor (rep=1:nreps, use_par)
         dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
+    end
+    catch
+        use_par=false;
+        for rep=1:nreps
+            dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
+        end
     end
 end
 % dreg(:,:,frames)=normcorre_batch(data2(:,:,frames),options_nonrigid);

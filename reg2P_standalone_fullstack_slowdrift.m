@@ -1,4 +1,4 @@
-function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,whichch,memmap,numBlocks)
+function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,whichch,memmap,numBlocks,use_par,save_path,fs)
 %data_out=reg2P_standalone_fullstack_slowdrift(data,batch_size,n_iter,bidi,n_ch,whichch)
 %Motion corrects for line scanning and then drift corrects with a more fine
 %nonrigid correction every batch_size/2
@@ -41,6 +41,13 @@ end
 if nargin<7 || isempty(numBlocks)
     numBlocks=[32 1;20 20];
 end
+if nargin<8 || isempty(use_par)
+    use_par=0;
+end
+if use_par
+    use_par=inf;
+end
+
 if numel(numBlocks)>=4
     slowdriftmode=true;
 else
@@ -63,6 +70,17 @@ if ischar(data) %if filename provided instead of the data
 else
     isfile=false;
 end
+if nargin < 9 || isempty(save_path)
+    if isfile
+    [folder,filename,ext]=fileparts(data);
+    else
+        folder=dir;
+    end
+    save_path=folder;
+end
+if nargin<10 || isempty(fs)
+    fs=30;
+end
 if isfile
     if memmap
         try
@@ -78,7 +96,9 @@ if isfile
             memmap=false;
         end
     end
-    if ~memmap
+    newfile=fullfile(save_path,[filename,'_sdmotcorr',ext]);
+
+    % if ~memmap
         info=readtifftags(data);
         Ly=info(1).ImageHeight;
         Lx=info(1).ImageWidth;
@@ -87,8 +107,7 @@ if isfile
         fseek(fid,0,'eof');
         len=ftell(fid);
         fclose(fid);
-        [folder,filename,ext]=fileparts(data);
-        newfile=fullfile(folder,[filename,'_sdmotcorr',ext]);
+        % [folder,filename,ext]=fileparts(data);
             if isfield(info,'ImageDescription')
                 desc=info(1).ImageDescription;
             else
@@ -100,7 +119,7 @@ if isfile
         TiffWriter=Fast_BigTiff_Write(newfile,info(1).Xresolution,0,desc);
     end
         %tic;
-    end
+    % end
     
 else
     memmap=false;
@@ -119,6 +138,7 @@ if ~isfile
     %remove empty cells
     in=squeeze(cellfun(@isempty,data_cell));
     data_cell(in)=[];
+    clear data %data is now redundant
 end
 
 if isfile
@@ -147,9 +167,9 @@ end
 if bidi && ~isfile
     % [col_shift] = correct_bidirectional_offset(data,100);
     % mimg=apply_col_shift(mimg,col_shift);
-    parfor rep=1:nreps
+    parfor (rep=1:nreps,use_par)
         %         data_cell{rep}=apply_col_shift(data_cell{rep},col_shift);
-        data_cell{rep}=apply_bidi_correction(data_cell{rep},bidi_dx,true);
+        data_cell{rep}=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);
         %       data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true);
         
     end
@@ -170,18 +190,22 @@ for rep=1:nreps
     if isfile
         if ~memmap
             data_cell=bigread4(data,(rep-1)*batch_size+1,min(batch_size,nFrames-batch_size*(rep-1)));
-            try
-                [data_cell,bidi_dx]=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
-            catch
-                [data_cell]=apply_bidi_correction(data_cell,bidi_dx,true); %low memory mode
-            end
+            % try
+            %     [data_cell,bidi_dx]=correct_bidi_across_x(data_cell,n_ch,whichch,true); %low memory mode
+            % catch
+                % [data_cell]=apply_bidi_correction(data_cell,bidi_dx,true); %low memory mode
+                data_cell=apply_bidi_correction_direct(data_cell{rep},bidi_dx,n_ch,true,length(bidi_dx)/Lx);
+
+            % end
         else
             frames=(rep-1)*batch_size+1:(rep-1)*batch_size+min(batch_size,nFrames-batch_size*(rep-1));
-            try
-                [data_cell,bidi_dx]=correct_bidi_across_x(permute(m.Data.allchans(:,:,frames),[2 1 3]),n_ch,whichch,true); %low memory mode
-            catch
-                [data_cell]=apply_bidi_correction(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,true); %low memory mode
-            end
+            % try
+            %     [data_cell,bidi_dx]=correct_bidi_across_x(permute(m.Data.allchans(:,:,frames),[2 1 3]),n_ch,whichch,true); %low memory mode
+            % catch
+                % [data_cell]=apply_bidi_correction(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,true); %low memory mode
+            data_cell=apply_bidi_correction_direct(permute(m.Data.allchans(:,:,frames),[2 1 3]),bidi_dx,n_ch,true,length(bidi_dx)/Lx);
+
+            % end
         end
     end
     
@@ -189,9 +213,13 @@ for rep=1:nreps
     
     %correct for scanning line shifts
     if isfile
-        [dreg]=reg2P_standalone_twostep(data_cell,mimg,false,numBlocks(1,:),n_ch,whichch);
+        % [dreg]=reg2P_standalone_twostep(data_cell,mimg,false,numBlocks(1,:),n_ch,whichch);
+        dreg=reg2P_standalone(data_cell,mimg,false,numBlocks(1,:),n_ch,whichch,[],fs,true);
+        clear data_cell
     else
-        [dreg]=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks(1,:),n_ch,whichch);
+        % [dreg]=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks(1,:),n_ch,whichch);
+        dreg=reg2P_standalone(data_cell{rep},mimg,false,numBlocks(1,:),n_ch,whichch,[],fs,true);
+        data_cell{rep}=[];%delete data that we are done with
     end
     if rep==1
         mimg=mean(dreg(:,:,whichch:n_ch:end),3);
@@ -208,9 +236,9 @@ for rep=1:nreps
     % if rep~=nreps || size(dreg,3)>=batch_size/2
     if size(dreg,3)>=batch_size/2
         if slowdriftmode
-          [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10);
-          [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10);
-        shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
+          [~,shift_temp]=reg2P_standalone(mean(dreg(:,:,whichch:n_ch:floor(nF_dreg/2)),3),mimg,false,numBlocks(2,:),1,1,10,[],false);
+          [~,shift_temp2]=reg2P_standalone(mean(dreg(:,:,floor(nF_dreg/2)+whichch:n_ch:end),3),mimg,false,numBlocks(2,:),1,1,10,[],false);
+            shifts=cat(1,shifts(end-1:end,:),shift_temp,shift_temp2);
         end
     end
     
@@ -231,13 +259,13 @@ for rep=1:nreps
         
         if isfile
             %write data to tiff file
-            if ~memmap
+            % if ~memmap
                 for a=1:size(dreg_prior,3)
                     TiffWriter.WriteIMG(dreg_prior(:,:,a)');
                 end
-            else
-                m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
-            end
+            % else
+            %     m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
+            % end
         else
             %prior batch data needs shifting, and we only saved the first
             %half
@@ -276,7 +304,7 @@ for rep=1:nreps
     end
     if isfile
         %write the first half of the data to tif
-        if ~memmap
+        % if ~memmap
             for a=1:floor(nF_dreg/2)
                 TiffWriter.WriteIMG(dreg(:,:,a)');
             end
@@ -286,12 +314,12 @@ for rep=1:nreps
                     TiffWriter.WriteIMG(dreg(:,:,a)');
                 end
             end
-        else
-            m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
-            if rep==nreps
-                m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=permute(dreg(:,:,floor(nF_dreg/2)+1:end),[2 1 3]);
-            end
-        end
+        % else
+        %     m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
+        %     if rep==nreps
+        %         m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=permute(dreg(:,:,floor(nF_dreg/2)+1:end),[2 1 3]);
+        %     end
+        % end
     else
         if rep~=nreps
             %if not the last batch, just save half the data
