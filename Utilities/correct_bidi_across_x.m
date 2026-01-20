@@ -8,9 +8,11 @@ function [fixed,dx]=correct_bidi_across_x(data,n_ch,whichch,lowmemory,use_poly_f
 %n_ch - now many channels
 %whichch - which channel to based the correction on
 %lowmemory - reduced memory mode (default: true); processes in chunks
+%use_poly_fit - fit a quadratic fit rather than raw calculated values
 %preserve_correlation_map - apply fixed dx value if the shift decreases
 %from center out so that spatial correlation maps generated later on do not
-%have abberations
+%have abberations. Requires polyfit, so this will override use_poly_fit
+%subpixl - how much to upsample in the x dimension
 %
 %OUTPUT:
 %fixed - corrected stack of the same size as data

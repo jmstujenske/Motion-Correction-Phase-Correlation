@@ -182,12 +182,14 @@ if isfile
                 % data_cell{rep}=correct_bidi_across_x(data_cell{rep},n_ch,whichch,true); %low memory mode
 
                 dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
+                % dreg{rep}=reg2P_standalone(data_cell{rep},mimg,true,numBlocks,n_ch,whichch,20,27,true,true,true);
                 % if size(numBlocks,1)>1
                 % [~,shifts]=reg2P_standalone(mean(dreg{rep},3),mimg,false,numBlocks(2,:),n_ch,whichch,10);
                 % dreg{rep}=apply_reg2P_shifts(dreg{rep},shifts);
                 % end
             end
             catch
+                warning('Use Parallel turned off due to error, likely too memory intensive.');
                 use_par=false;
              for rep=1:(min(nw,nreps-outrep+1))
                 dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
@@ -219,8 +221,11 @@ else
     try
     parfor (rep=1:nreps, use_par)
         dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);
+        % dreg{rep}=reg2P_standalone(data_cell{rep},mimg,true,numBlocks,n_ch,whichch,30,27,true,true,true);
+
     end
     catch
+        warning('Use parallel switched off due to error.');
         use_par=false;
         for rep=1:nreps
             dreg{rep}=reg2P_standalone_twostep(data_cell{rep},mimg,false,numBlocks,n_ch,whichch);

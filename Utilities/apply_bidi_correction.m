@@ -47,7 +47,12 @@ for rep=1:n_ch
         this_batch_size=length(lines);
         ins=(1:this_batch_size)+(batch-1)*batch_size;
         cur_ind = max(idy(ins,:)-(batch-1)*batch_size + DX(ins,:) * this_batch_size,1);
-        upsized=imresize(data(lines,:,rep:n_ch:end),[this_batch_size Lx]);
+        % upsized=imresize(data(lines,:,rep:n_ch:end),[this_batch_size Lx]);
+        if subpixel~=1
+            upsized=imresize_rows_only(double(data(lines,:,rep:n_ch:end)),[this_batch_size Lx*subpixel],'linear');
+        else
+            upsized=double(data(lines,:,rep:n_ch:end));
+        end
 %     OLD implementation: loop through every frame and apply the same correction to each
 %     loop through every frame and apply the same correction to each
 %         for i=1:nFrames
@@ -57,7 +62,7 @@ for rep=1:n_ch
 %         end
         inds=(cur_ind+this_batch_size*Lx*reshape((0:nFrames-1),1,1,[]));
         subpix_fix=upsized(inds); %directly indexing the matrix is 30% faster for large matrices
-        fixed(lines,:,rep:n_ch:end)=imresize(subpix_fix,[this_batch_size Lx/subpixel],'Antialiasing',false);
+        % fixed(lines,:,rep:n_ch:end)=imresize(subpix_fix,[this_batch_size Lx/subpixel],'Antialiasing',false);
     end
 end
 end

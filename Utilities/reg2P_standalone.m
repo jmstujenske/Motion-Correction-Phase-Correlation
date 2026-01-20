@@ -1,4 +1,4 @@
-function [dreg_full,shifts]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg)
+function [dreg_full,shifts,m]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp)
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
 %data - X by Y by (C*T) frame stack
 %mimg - template image (default: 1000 frame average)
@@ -28,6 +28,9 @@ subpixel = min(10, subpixel);
 
 eps0 = single(1e-10);
 
+if nargin<11 || isempty(bidi_comp)
+    bidi_comp=false;
+end
 if nargin<10 || isempty(use_subpixel_reg)
     use_subpixel_reg=true;
 end
@@ -51,7 +54,9 @@ if nargin<3 ||isempty(kriging)
     kriging=false;
 end
 if nargin<4 || isempty(numBlocks)
-    numBlocks=[1 1];
+    numBlocks = [32 1];
+elseif length(numBlocks)==1
+    numBlocks=repmat(numBlocks,1,2);
 end
 
         % function [y,x,m]=cross_corr_memory(block_size)
@@ -104,7 +109,9 @@ end
 if quick
     if nargin<2 || isempty(mimg)
         % refImg=gen_mimg(data,whichch,n_ch,n_Frames_template);
-        refImg=mean(data(:,:,whichch:n_ch:end),3);
+        % refImg=mean(data(:,:,whichch:n_ch:end),3);
+        refImg=gen_template(data(:,:,whichch:n_ch:end),min(1000,nf/n_ch));
+
     else
         refImg=mimg;
     end
@@ -122,7 +129,7 @@ if quick
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,size(data,3),true);
+    useGPU, eps0,10000,true,bidi_comp);
     % xyMask_rigid = make_xyMask(size(data,1), size(data,2), [1 1]);
     % [y,x]=ds_to_dxy(xyMask_rigid,ds,size(data,1:2));
     [y,x]=ds_to_dxy([],ds_rigid,size(data,1:2));
@@ -142,10 +149,10 @@ data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg);
 %     shifts={[],ds_rigid};
 %     return;
 % end
-movements=m_smooth<th | sqrt(x.^2+y.^2)>2; %only need to apply non-rigid to
+movements=m_smooth<th;% | sqrt(x.^2+y.^2)>2; %only need to apply non-rigid to
 % cases where the maximum correlation after rigid correction dips below
 % expected, or large displacements, to be conservative
-movements_pad=find(conv(movements,ones(1,max(ceil(fs/4),3)),'same')>0);
+movements_pad=find(conv(movements,ones(1,max(ceil(fs/10),3)),'same')>0);
 clear movements
 movements_pad=(movements_pad(:)-1)*n_ch+(1:n_ch)*n_ch;
 movements_pad=movements_pad(:);
@@ -157,6 +164,7 @@ data_sub=data(:,:,movements_pad);
 else
     data_sub=data;
     movements_pad=1:size(data,3);
+    m=[];
 end
 
 
@@ -169,9 +177,9 @@ data_sub=single(data_sub);
 data_sub=pad_expand(data_sub,pad);
 
 [Ly,Lx,nFrames] = size(data_sub);
-
 if nargin<2 || isempty(mimg)
-    if quick
+        if quick
+
         channel_idx=whichch:n_ch:nf;
         mimg=gen_template(data(:,:,channel_idx(setdiff(1:nf,movements_pad))),min(1000,nFrames));
         mimg=pad_expand(mimg,pad);
@@ -183,72 +191,83 @@ else
     mimg=pad_expand(mimg,pad);
     mimg=single(mimg);
 end
-mimg=imgaussfilt(mimg,.5);%-1.1*imgaussfilt(mimg,2);
+% mimg=imgaussfilt(mimg,.5);%-1.1*imgaussfilt(mimg,2);
 mimg(mimg<0)=0;
 
 % data_smooth=imgaussfilt(data,.5);%-1.1*imgaussfilt(data,2);
 % clear data
 data_sub(data_sub<0)=0;
 
-[ds_rigid2] = register_blocks_fft_subpixel( ...
-    data_sub, mimg,[], ...
-    maxregshift, subpixel, ...
-    smoothSigma, maskSlope, ...
-    phaseCorrelation, kriging, ...
-    useGPU, eps0,1000,false);
-    % xyMask_rigid = make_xyMask(size(data,1), size(data,2), [1 1]);
-    % [y,x]=ds_to_dxy(xyMask_rigid,ds,size(data,1:2));
-    [y,x]=ds_to_dxy([],ds_rigid2,size(data,1:2));
-
-            % x=ds(:,:,2);
-            % y=ds(:,:,1);
-
-        % x=(x-median(x));
-        % y=(y-median(y));
-data_sub=apply_rigid_dx(data_sub,x,y,n_ch,use_subpixel_reg);
-if quick
-ds_rigid(:,movements_pad,:)=ds_rigid(:,movements_pad,:)+ds_rigid2;
-else
-    ds_rigid=ds_rigid2;
-end
-clear ds_rigid2
-if prod(numBlocks)==1
-    dreg_full=data;
-    shifts={[],ds_rigid};
-    return;
-end
-
-if nargin<4 || isempty(numBlocks)
-    numBlocks = [32 1];
-elseif length(numBlocks)==1
-    numBlocks=repmat(numBlocks,1,2);
-end
+% [ds_rigid2] = register_blocks_fft_subpixel( ...
+%     data_sub, mimg,[], ...
+%     maxregshift, subpixel, ...
+%     smoothSigma, maskSlope, ...
+%     phaseCorrelation, kriging, ...
+%     useGPU, eps0,2000,false);
+%     % xyMask_rigid = make_xyMask(size(data,1), size(data,2), [1 1]);
+%     % [y,x]=ds_to_dxy(xyMask_rigid,ds,size(data,1:2));
+%     % [dy_rigid_2,dx_rigid_2]=ds_to_dxy([],ds_rigid2,size(data,1:2));
+% 
+%             % x=ds(:,:,2);
+%             % y=ds(:,:,1);
+% 
+%         % x=(x-median(x));
+%         % y=(y-median(y));
+% % data_sub=apply_rigid_dx(data_sub,x,y,n_ch,use_subpixel_reg);
+% % if quick
+% ds_rigid_2=zeros(1,nf/n_ch,2);
+% ds_rigid_2(:,movements_pad,:)=ds_rigid2;
+% ds_rigid_2=zeros(1,nf/n_ch,2);
+% ds_rigid2=zeros(1,length(movements_pad),2);
+% else
+    % ds_rigid=ds_rigid2;
+% end
+% clear ds_rigid2
+% if prod(numBlocks)==1
+%     dreg_full=data;
+%     if quick
+%             shifts={[],ds_rigid_2+ds_rigid};
+%     else
+%     shifts={[],ds_rigid_2};
+%     end
+%     return;
+% end
 nblocks = prod(numBlocks);
-
 xyMask = make_xyMask(Ly, Lx, numBlocks);   
+
+if nblocks>1 || ~quick
 
     ds = register_blocks_fft_subpixel( ...
     data_sub, mimg,numBlocks, ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,5000,false);
+    useGPU, eps0,5000,false,bidi_comp);
     %loop through every block and remove outliers
 NT = size(data_movtrunc_allch,3);
 [Ly,Lx]=size(data_sub,1:2);
 clear data_sub
 % dreg = zeros([Ly Lx], class_data);
-[dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
-
-if nargout>1
-    if quick
-        ds_full=repmat(ds_rigid,nblocks,1,1);
-        ds_full(:,movements_pad,:)=ds_full(:,movements_pad,:)+ds;
-        ds=ds_full;
-    end
+        [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
+else
+dy=0;dx=0;ds=[];
 end
-shifts={xyMask,ds};
+% if nargout>1
+% dx=dx+reshape(ds_rigid2(:,:,2),1,1,[]);
 
+% dy=dy+reshape(ds_rigid2(:,:,1),1,1,[]);
+        % ds_full=repmat(ds_rigid_2,nblocks,1,1);
+        % ds_full(:,movements_pad,:)=ds_full(:,movements_pad,:)+ds;
+        % ds=ds_full;
+
+        if nargout>1
+            if quick
+                shifts={xyMask,ds_rigid,ds};
+            else
+                shifts={xyMask,ds};
+            end
+% end
+        end
 clear xyMask ds
 % for idx = 1:NT
 %     frame_num=ceil(idx/n_ch);
@@ -258,8 +277,8 @@ clear xyMask ds
 %     dy_i=dy(:,:,frame_num);
 %     dreg(:,:,idx)=imwarp(Im,cat(3,dx_i,dy_i),'linear');
 % end
-        if size(dx,1)==1 || size(dx,2)==1
-            dreg=apply_rigid_dx(data_movtrunc_allch,dx,dy,n_ch,use_subpixel_reg);
+        if size(dx,1)==1
+    dreg=apply_rigid_dx(data_movtrunc_allch,dx,dy,n_ch,use_subpixel_reg);
         else
             dreg=apply_nonrigid_dx(data_movtrunc_allch,dx,dy,n_ch,use_subpixel_reg,pad);
         end
@@ -297,32 +316,45 @@ end
 orig_x=1:size(X,2);
 orig_y=1:size(X,1);
 nf=size(X,3)/n_ch;
+dx=double(dx);
+dy=double(dy);
 changes=(abs(dx)>.5 | abs(dy)>.5);
 fs=1:nf;
 fs=fs(changes);
 out=X;
-
-if ~subpixel
 [x_coords,y_coords]=meshgrid(orig_x,orig_y);
-
+if ~subpixel
+nPixels=prod(size(X,1:2));
 for i=fs
     fs_allch=(i-1)*n_ch+(1:n_ch);
     x_coords_new=x_coords+double(dx(i));
 y_coords_new=y_coords+double(dy(i));
 x_coords_new=min(max(round(x_coords_new),1),size(X,2));
 y_coords_new=min(max(round(y_coords_new),1),size(X,1));
-ins_orig=(x_coords-1)*size(X,1)+y_coords+reshape(fs_allch-1,1,1,[])*prod(size(X,1:2));
-ins=(x_coords_new-1)*size(X,1)+y_coords_new+reshape(fs_allch-1,1,1,[])*prod(size(X,1:2));
+ins_orig=(x_coords-1)*size(X,1)+y_coords+reshape(fs_allch-1,1,1,[])*nPixels;
+ins=(x_coords_new-1)*size(X,1)+y_coords_new+reshape(fs_allch-1,1,1,[])*nPixels;
 out(double(ins_orig))=X(double(ins));
 end
 
 else
+    %             dx=repmat(dx,size(X,1:2));
+    %         dy=repmat(dy,size(X,1:2));
+    % for i = fs
+    %     for j=1:n_ch
+    %         Im = X(:,:,(i-1)*n_ch+j);
+    % 
+    %         out(:,:,(i-1)*n_ch+j)=imwarp(Im,cat(3,dx(:,:,i),dy(:,:,i)),'linear');
+    %     end
+    % end
     for i = fs
         for j=1:n_ch
             Im = X(:,:,(i-1)*n_ch+j);
-            dx_i=repmat(double(dx(i)),size(X,1:2));
-            dy_i=repmat(double(dy(i)),size(X,1:2));
-            out(:,:,(i-1)*n_ch+j)=imwarp(Im,cat(3,dx_i,dy_i),'linear');
+
+                x_coords_new=x_coords+double(dx(i));
+y_coords_new=y_coords+double(dy(i));
+x_coords_new=min(max(round(x_coords_new),1),size(X,2));
+y_coords_new=min(max(round(y_coords_new),1),size(X,1));
+            out(:,:,(i-1)*n_ch+j)= images.internal.interp2d(Im,x_coords_new,y_coords_new,'linear',0);%less overhead than imwarp   
         end
     end
 end
@@ -339,13 +371,13 @@ end
 orig_x=1:size(X,2)+pad*2;
 orig_y=1:size(X,1)+pad*2;
 nf=size(X,3)/n_ch;
-changes=find(squeeze(any(abs(dx)>.5 | abs(dy)>.5,1:2)));
+changes=find(squeeze(any(abs(dx)>.5 | abs(dy)>.5,[1 3])));
 fs=1:nf;
 % fs=fs(changes);
 out=zeros(size(dx,1),size(dx,2),size(X,3),class(X));
+[x_coords,y_coords]=meshgrid(orig_x,orig_y);
 
 if ~subpixel
-[x_coords,y_coords]=meshgrid(orig_x,orig_y);
 for i=fs
     fs_allch=(i-1)*n_ch+(1:n_ch);
     X_sub=X(:,:,fs_allch);
@@ -370,9 +402,16 @@ else
             Im = pad_expand(Im,pad);
                 if ismember(i,changes)
 
-            dx_i=dx(:,:,i);
-            dy_i=dy(:,:,i);
-            out(:,:,(i-1)*n_ch+j)=imwarp(Im,cat(3,dx_i,dy_i),'linear');
+            % dx_i=dx(:,:,i);
+            % dy_i=dy(:,:,i);
+                            x_coords_new=x_coords+double(dx(:,:,i));
+y_coords_new=y_coords+double(dy(:,:,i));
+x_coords_new=min(max(round(x_coords_new),1),size(X,2));
+y_coords_new=min(max(round(y_coords_new),1),size(X,1));
+
+            % out(:,:,(i-1)*n_ch+j)=imwarp(Im,cat(3,dx_i,dy_i),'linear');
+
+            out(:,:,(i-1)*n_ch+j)= images.internal.interp2d(Im,x_coords_new,y_coords_new,'linear',0); %less overhead than imwarp
                 else
                     out(:,:,(i-1)*n_ch+j)=Im;
                 end
@@ -388,7 +427,7 @@ function [ds,m] = register_blocks_fft_subpixel( ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,batchSize,useSVD)
+    useGPU, eps0,batchSize,useSVD,bidi_comp)
 
 % data        : full movie [Y X T]
 % mimgB       : cell array of reference images per block
@@ -405,6 +444,9 @@ function [ds,m] = register_blocks_fft_subpixel( ...
 % eps0        : small constant for normalization
 %
 % ds          : [nblocks x nFrames x 2] shifts (y,x)
+if nargin<14 || isempty(bidi_comp)
+    bidi_comp=false;
+end
 if nargin<13 || isempty(useSVD)
     useSVD=false;
 end
@@ -436,7 +478,7 @@ for ib = 1:nblocks
     refImg = mimgB{ib};
     refImg = refImg - mean(refImg,'all');
     subdata = data(yBL{ib}, xBL{ib}, :);
-    subdata = imgaussfilt(subdata, 0.5, 'Padding', 'symmetric');
+    % subdata = imgaussfilt(subdata, 0.5, 'Padding', 'symmetric');
 
     ly = numel(yBL{ib});
     lx = numel(xBL{ib});
@@ -498,11 +540,11 @@ for ib = 1:nblocks
 
     maskOffset = mean(refImg(:)) * (1 - maskMul);
 
+    if bidi_comp
+    refImg=[refImg(1:2:end,:);refImg(2:2:end,:)];
+    end
     % FFT of reference
     cfRefImg = conj(fftn(refImg));
-    if phaseCorrelation
-        cfRefImg = cfRefImg ./ (eps0 + abs(cfRefImg)) .* fhg;
-    end
 
     if useGPU
         cfRefImg   = gpuArray(cfRefImg);
@@ -520,12 +562,15 @@ for ib = 1:nblocks
         else
             batchData = single(subdata(:,:,fi));
         end
+        if ib==nblocks && bi == nBatches
+            clear subdata data;
+        end
 if numel(batchData)>532*532*5000
     useSVD=true; %force SVD on if data is too large
 end
 if useSVD
     % K_b=min(100,length(fi));
-    K_b=max(10,ceil(length(fi)/50));
+    K_b=min(max(10,ceil(length(fi)/20)),100);
     if K_b==length(fi)
         K_b=0;
         useSVD=false;
@@ -533,12 +578,14 @@ if useSVD
 else
     K_b=0;
 end
-
+    if phaseCorrelation && ~useSVD
+        cfRefImg = cfRefImg ./ (eps0 + abs(cfRefImg)) .* fhg;
+    end
 % if useSVD
     % cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
 % else
     cc0=calc_correlation(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, batchData)),...
-        cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
+        cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b,bidi_comp);
 % end
         % --- subpixel estimation ---
         if subpixel > 1
@@ -589,6 +636,9 @@ end
         end
     end
 end
+    if bidi_comp
+    ds(:,:,1)=ds(:,:,1)*2;
+    end
     for b=1:size(ds,1)
         outlier=any(abs(ds(b,:,:))>=maxregshift,3);
         if any(outlier)
@@ -733,11 +783,13 @@ end
 function [dy,dx]=ds_to_dxy(xyMask,ds,sz)
 Ly=sz(1);
 Lx=sz(2);
-if size(ds,1)==1 || size(ds,2)==1
+if size(ds,1)==1
     dx = ds(:,:,2);
     dy = ds(:,:,1);
     dx = dx-round(median(dx,'all'));
     dy = dy-round(median(dy,'all'));
+    dx = reshape(dx,1,1,[]);
+    dy = reshape(dy,1,1,[]);
     return;
 end
 try
@@ -764,9 +816,15 @@ dx = reshape(dx, Ly, Lx, []);
 dy = reshape(dy, Ly, Lx, []);
 end
 
-function cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b)
+function cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b,bidi_comp)
 if nargin<7 || isempty(K_b)
     K_b=0;
+end
+if nargin<8 || isempty(bidi_comp)
+    bidi_comp=false;
+end
+if bidi_comp
+batchData=batchData([1:2:end 2:2:end],:,:);
 end
 [ly,lx]=size(batchData,1:2);
 batchData=batchData-mean(batchData,1:2);
@@ -780,14 +838,14 @@ if K_b>0
             S=S(1:K_b,1:K_b);
             V=V(:,1:K_b);
         end
-        corrMap=fft2(reshape(U*S,ly,lx,[]));
+        corrMap=fft2(reshape(U,ly,lx,[]));
 
-        if phaseCorrelation
-            corrMap = bsxfun(@times, ...
-                corrMap ./ (eps0 + abs(corrMap)) .* fhg, cfRefImg);
-        else
+       % if phaseCorrelation
+       %      corrMap = bsxfun(@times, ...
+       %          corrMap ./ (eps0 + abs(corrMap)) .* fhg, cfRefImg);
+       %  else
             corrMap = bsxfun(@times, corrMap, cfRefImg);
-        end
+        % end
 
         corrClip = real(ifft2(corrMap));
         corrClip = fftshift(fftshift(corrClip,1),2);
@@ -800,7 +858,7 @@ if K_b>0
 Mode_cc0 = reshape(Mode_cc0,[],K_b);
 % VS = V * S;
 % cc0=Mode_cc0*VS';
-cc0=Mode_cc0*V';
+cc0=Mode_cc0*S*V';
 cc0=reshape(cc0,lcorr*2+1,lcorr*2+1,[]);
 
 % cc0=zeros(lcorr*2+1,lcorr*2+1,nf);
@@ -835,7 +893,7 @@ end
 end
 
 function refImg=gen_mimg(data,whichch,n_ch,n_Frames_template)
-        div=nf/n_ch/n_Frames_template;
+        div=size(data,3)/n_ch/n_Frames_template;
         first=floor(div/2)+1;
         % div=floor(div);
         frames=(round(first:div:nf/n_ch)-1)*n_ch+whichch;

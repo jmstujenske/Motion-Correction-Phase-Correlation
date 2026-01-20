@@ -6,7 +6,10 @@ if nargin<4 || isempty(lowmemory)
     lowmemory=false;
 end
 if nargin<5 || isempty(subpixel)
-    subpixel=10;
+    % subpixel=10;
+    subpixel=length(dx)/Lx;
+else
+    dx=imresize(dx,[1 Lx*subpixel]);
 end
 [Ly,Lx,nFrames]=size(data);
 Ly=ceil(Ly/2);
@@ -15,7 +18,7 @@ idx = repmat((0:Lx-1),  Ly, 1)*subpixel+floor(subpixel/2)+1;
 % dx=round(dx);
 dx=dx*subpixel;
 if length(dx)~=Lx
-dx=imresize(dx,[1 Lx]);
+dx=imresize(dx,[1 Lx],'Antialiasing',false);
 end
 % apply offsets to indexing
 DX = round(dx+idx);

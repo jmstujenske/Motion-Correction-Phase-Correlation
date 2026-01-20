@@ -12,6 +12,9 @@ function [data]=reg2P_standalone_fullstack_slowdrift(data,batch_size,bidi,n_ch,w
 %whichch - which channel to motion correct based on
 %memmap - try to memory map tiff and edit directly (default: false)
 %numBlocks - two steps; default is [32 1;32 32];
+%use_par - use parallel computing for bidi correction (default: false)
+%save_path - where to output file (default: same directory as file or current directory if not a file)
+%imaging rate - fs
 %
 %OUTPUT:
 %data_out - either the corrected frame stack OR new filename (tif)
@@ -95,10 +98,8 @@ if isfile
             warning('Memory mapping failed.')
             memmap=false;
         end
-    end
-    newfile=fullfile(save_path,[filename,'_sdmotcorr',ext]);
-
-    % if ~memmap
+    else
+         newfile=fullfile(save_path,[filename,'_sdmotcorr',ext]);
         info=readtifftags(data);
         Ly=info(1).ImageHeight;
         Lx=info(1).ImageWidth;
@@ -119,7 +120,7 @@ if isfile
         TiffWriter=Fast_BigTiff_Write(newfile,info(1).Xresolution,0,desc);
     end
         %tic;
-    % end
+    end
     
 else
     memmap=false;
@@ -227,13 +228,13 @@ for rep=1:nreps
         
         if isfile
             %write data to tiff file
-            % if ~memmap
+            if ~memmap
                 for a=1:size(dreg_prior,3)
                     TiffWriter.WriteIMG(dreg_prior(:,:,a)');
                 end
-            % else
-            %     m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
-            % end
+            else
+                m.Data.allchans(:,:,frames(floor(batch_size/2)+1:end)-batch_size)=permute(dreg_prior,[2 1 3]);
+            end
         else
             %prior batch data needs shifting, and we only saved the first
             %half
@@ -279,7 +280,7 @@ for rep=1:nreps
     end
     if isfile
         %write the first half of the data to tif
-        % if ~memmap
+        if ~memmap
             for a=1:floor(nF_dreg/2)
                 TiffWriter.WriteIMG(dreg(:,:,a)');
             end
@@ -289,12 +290,12 @@ for rep=1:nreps
                     TiffWriter.WriteIMG(dreg(:,:,a)');
                 end
             end
-        % else
-        %     m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
-        %     if rep==nreps
-        %         m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=permute(dreg(:,:,floor(nF_dreg/2)+1:end),[2 1 3]);
-        %     end
-        % end
+        else
+            m.Data.allchans(:,:,frames(1:floor(nF_dreg/2)))=permute(dreg(:,:,1:floor(nF_dreg/2)),[2 1 3]);
+            if rep==nreps
+                m.Data.allchans(:,:,frames(floor(nF_dreg/2)+1:end))=permute(dreg(:,:,floor(nF_dreg/2)+1:end),[2 1 3]);
+            end
+        end
     else
         if rep~=nreps
             %if not the last batch, just save half the data
