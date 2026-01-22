@@ -27,7 +27,7 @@ first=floor(div/2)+1;
 % div=floor(div);
 frames=(round(first:div:nFrames)-1)*n_ch+whichch;
 if ~isfile
-    mimg=nanmean(data(:,:,frames),3);
+    mimg=nanmean(single(data(:,:,frames)),3);
 else
     mimg=zeros(Ly,Lx,'single');
     for a=frames

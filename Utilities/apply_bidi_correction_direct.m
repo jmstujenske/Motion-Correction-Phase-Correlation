@@ -5,20 +5,23 @@ end
 if nargin<4 || isempty(lowmemory)
     lowmemory=false;
 end
+[Ly,Lx,nFrames]=size(data);
+
 if nargin<5 || isempty(subpixel)
     % subpixel=10;
+    if ~isscalar(dx)
     subpixel=length(dx)/Lx;
-else
-    dx=imresize(dx,[1 Lx*subpixel]);
+    else
+        subpixel=10;
+    end
 end
-[Ly,Lx,nFrames]=size(data);
 Ly=ceil(Ly/2);
 idy = repmat((1:Ly)', 1, Lx);
 idx = repmat((0:Lx-1),  Ly, 1)*subpixel+floor(subpixel/2)+1;
 % dx=round(dx);
 dx=dx*subpixel;
-if length(dx)~=Lx
-dx=imresize(dx,[1 Lx],'Antialiasing',false);
+if length(dx)~=Lx && ~isscalar(dx)
+dx=imresize_rows_only(dx,[1 Lx]);
 end
 % apply offsets to indexing
 DX = round(dx+idx);
@@ -29,7 +32,7 @@ DX(DX>Lx*subpixel-1)=Lx*subpixel;
 %upsample the other channels
 fixed=data;
 if lowmemory
-    batch_size=16;
+    batch_size=8;
 else
     batch_size=Ly;
 end

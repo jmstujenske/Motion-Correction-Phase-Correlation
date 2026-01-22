@@ -21,7 +21,7 @@ x_new = linspace(1, N, Nout).';
 
 % Put data into shape [N x (M*C)] so interp1(x_old, V, xq, ...) interpolates
 % along the column dimension (length(x_old) == size(V,1)).
-V = permute(I, [2,1,3]);          % [N x M x C]
+V = permute(double(I), [2,1,3]);          % [N x M x C]
 V = reshape(V, N, []);            % [N x (M*C)]
 
 % interpolate: returns [Nout x (M*C)] — vectorized for all rows & channels

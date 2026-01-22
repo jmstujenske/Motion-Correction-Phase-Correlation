@@ -43,28 +43,29 @@ if preserve_correlation_map && ~use_poly_fit
     use_poly_fit=true;
     warning('Preserve correlation map on: Forcing poly fit on.');
 end
+data=double(data);
 bg_pix=50; %radius of gaussian blur for background correction
 max_shift=4; %assume that the pixel correction should be less than 4 pixels in any given location;
 %this is necessary to avoid weird edge effects from limited sample points --
 %maybe another solution would be better
 lags=-max_shift*subpixel:max_shift*subpixel;
-smooth_lag=max(ceil(size(data,2)/100),1);
+smooth_lag=max(ceil(size(data,2)/20),1);
 edge_remove=10;
 [Ly,Lx_orig,nFrames]=size(data);
 Lx=Lx_orig;
 nFrames=nFrames/n_ch;
-grn=data(:,:,whichch:n_ch:end);
+grn=double(data(:,:,whichch:n_ch:end));
 xcor_dat=zeros(length(lags),Lx*subpixel);
 
 %upsample along the x-axis
-img=mean(grn,3);
+img=mean(grn,3);clear grn
 img2=max(img./imgaussfilt(img,bg_pix)-1,0);
 % img=imresize(img,[Ly Lx*subpixel*lag_subpix_fact]);
 
 %correct for differences in fluorescence across the image, to equalize
 %weighting
 img2=max(img./imgaussfilt(img,bg_pix,'Padding','symmetric')-1,0);
-img2=imresize(img2,[Ly Lx*subpixel]);
+img2=imresize_rows_only(img2,[Ly Lx*subpixel]);
 
 %split into interleaving strips
 data1=img2(1:2:end,:);
@@ -79,10 +80,11 @@ data2=zscore(data2,[],2);
 in=0;
 
 %calculate cross-correlation across the x-axis
+data2=data2(edge_remove+1:end-edge_remove,:,:);
 for lag=lags
     in=in+1;
     data_shift=data1(edge_remove+1:end-edge_remove,min(max(1+lag:end+lag,1),Lx*subpixel),:);
-    xcor_dat(in,:)=mean(data_shift.*data2(edge_remove+1:end-edge_remove,:,:),[1 3]);
+    xcor_dat(in,:)=mean(data_shift.*data2,[1 3]);
 end
 %smooth across the x-axis
 %editted 10/14/25 by JMS for more stable and smooth output for short
@@ -103,7 +105,7 @@ else
     return;
 end
 m=nanmean(dx);
-dx=conv2_symmetric(dx-m,gausskernel(smooth_lag*5*subpixel,smooth_lag/2*subpixel)','same')+m;
+% dx=conv2_symmetric(dx-m,gausskernel(smooth_lag*5*subpixel,smooth_lag/2*subpixel)','same')+m;
 p=polyfit(1:length(dx),dx,2);
 turningpoint=-p(2)/(2*p(1));
 dx_turningpoint=polyval(p,turningpoint);
@@ -115,7 +117,7 @@ end
 if preserve_correlation_map
     if (p(1)>0 && dx_turningpoint<0) || (p(1)<0 && dx_turningpoint>0)
     
-        warning('Perserve Correlation Map On: Forcing single dx value.')
+        warning('Preserve Correlation Map On: Forcing single dx value.')
         % [fixed,dx]=correct_bidi_single(data,n_ch,whichch,lowmemory);
         % return;
         dx=m;
