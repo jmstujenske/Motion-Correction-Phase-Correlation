@@ -1,72 +1,50 @@
-function [dreg,shifts,m]=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
-%dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch)
+function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
+%kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
+%
+%Two input options:
+%dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
+%
+%OR
+%
+%dreg=reg2P_standalone(data,mimg,options)
+%where options is a structure with fields corresponding to above variables
+%
 %data - X by Y by (C*T) frame stack
 %mimg - template image (default: 1000 frame average)
-%kriging - whether to use kriging or not
-%numBlocks - default is [32 1]
-%n_ch - how many channels in data
-%whichch - which channel to motion correct based on
+%kriging - whether to use kriging or not (default: true)
+%numBlocks - how many blocks to break image into (default: [1 1])
+%n_ch - how many channels in data (default: 1)
+%whichch - which channel to motion correct based on (default: 1)
 %maxregshift - maximum shift (default: 30)
-%
+%fs - frame rate (default: 30)
+%quick - run a quick rigid correction and then only apply nonrigid
+%correction to frames with dips in cross-correlation (default: true)
+%use_subpixel_reg - whether to use subpixel registration when applying
+%motion correction (default: true)
+%bidi_comp - whether to compensate for differences introduced by
+%bidirectional scanning when calculating cross-correlation (only necessary
+%for more hardware configurations; default: true)
 %
 %Expansion of solution from Suite2p Matlab version, now made as a
 %standalone
 %implementation
 %https://github.com/cortex-lab/Suite2P
 %
-%Please cite the original authors
+%Stujenske, JM Jan 2026
 %
-trim=30;
-subpixel = 10;
-useGPU = true;
-phaseCorrelation = true;
-% maximum shift allowed
-% slope on taper mask preapplied to image. was 2, then 1.2
-maskSlope   = 5;
-% SD pixels of gaussian smoothing applied to correlation map (MOM likes .6)
-smoothSigma = 1.15;
+%
+if isstruct(varargin{1})
+    options_in=varargin{1};
+    options=parse_options(options_in);
+else
+    options=parse_inputs(varargin);
+end
+[kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,...
+    bidi_comp,bidi_correct,trim,subpixel,useGPU,phaseCorrelation,maskSlope,...
+    smoothSigma,eps0]=eval_options(options);
 
 % if subpixel is still inf, threshold it for new method
 subpixel = min(10, subpixel);
-
-eps0 = single(1e-10);
-
-if nargin<12 || isempty(bidi_correct)
-    bidi_correct=false;
-end
-if nargin<11 || isempty(bidi_comp)
-    bidi_comp=false;
-end
-if nargin<10 || isempty(use_subpixel_reg)
-    use_subpixel_reg=true;
-end
-if nargin<9 || isempty(quick)
-    quick=false;
-end
-if nargin<6 || isempty(whichch)
-    whichch=1;
-end
-if nargin<5 || isempty(n_ch)
-    n_ch=whichch;
-end
-if nargin<8 || isempty(fs)
-    fs=30;
-end
-if nargin<7 || isempty(maxregshift)
-    maxregshift=30;
-end
-
-if nargin<3 ||isempty(kriging)
-    kriging=false;
-end
-if nargin<4 || isempty(numBlocks)
-    numBlocks = [32 1];
-elseif length(numBlocks)==1
-    numBlocks=repmat(numBlocks,1,2);
-end
-
-
-
 
 nf=size(data,3);
 if nf/n_ch<=1+fs*4
@@ -245,6 +223,67 @@ else
 end
 end
 
+function defaults=get_defaults()
+defaults={'kriging','numBlocks','n_ch','whichch','maxregshift','fs','quick','use_subpixel_reg','bidi_comp','bidi_correct','trim','subpixel','useGPU','phaseCorrelation','maskSlope','smoothSigma','eps0';...
+            true,   [1 1],       1,    1,       30,           27,    true,   true,              false,       false,        30,    10,        false,   true,              5,          1.15,         1e-10};
+end
+
+function options_out=parse_options(options)
+defaults=get_defaults();
+options_out=struct();
+nf=size(defaults,2);
+fnames=fieldnames(options);
+for i=1:nf
+    field_i=defaults{1,i};
+    detect_match=find(strcmp(field_i,fnames));
+    if ~isempty(detect_match)
+        options_out.(field_i)=options.(fnames{detect_match});
+    end
+    if isempty(detect_match) | isempty(options_out.(field_i))
+        options_out.(field_i)=defaults{2,i};
+    end
+end
+
+end
+
+function options=parse_inputs(inputs)
+defaults=get_defaults();
+n_inputs=length(inputs);
+nf=size(defaults,2);
+for i=1:nf
+    field_i=defaults{1,i};
+    if i<=n_inputs
+        options.(field_i)=inputs{i};
+        if isempty(options.(field_i))
+            options.(field_i)=defaults{2,1};
+        end
+    else
+        options.(field_i)=defaults{2,i};
+    end
+end
+end
+
+function [kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,...
+    use_subpixel_reg,bidi_comp,bidi_correct,trim,subpixel,useGPU,...
+    phaseCorrelation,maskSlope,smoothSigma,eps0]=eval_options(options)
+kriging=options.kriging;
+numBlocks=options.numBlocks;
+n_ch=options.n_ch;
+whichch=options.whichch;
+maxregshift=options.maxregshift;
+fs=options.fs;
+quick=options.quick;
+use_subpixel_reg=options.use_subpixel_reg;
+bidi_comp=options.bidi_comp;
+bidi_correct=options.bidi_correct;
+trim=options.trim;
+subpixel=options.subpixel;
+useGPU=options.useGPU;
+phaseCorrelation=options.phaseCorrelation;
+maskSlope=options.maskSlope;
+smoothSigma=options.smoothSigma;
+eps0=options.eps0;
+end
 % function out=fft2_memory(X,block_size)
 % if nargin<2 || isempty(block_size)
 %     block_size=5000;
@@ -301,3 +340,4 @@ end
         %         x((frames-whichch)/n_ch+1)=(x_t-maxregshift*subpixel-1)/subpixel;
         %     end
         % end
+
