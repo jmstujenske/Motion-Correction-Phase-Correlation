@@ -1,4 +1,4 @@
-function mimg=gen_template(data,n_Frames_template,n_ch,whichch)
+function [mimg,frames]=gen_template(data,n_Frames_template,n_ch,whichch)
 if nargin<4 || isempty(n_ch)
     n_ch=1;
 end

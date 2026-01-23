@@ -1,4 +1,4 @@
-function cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b,bidi_comp)
+function [cc0,lcorr]=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b,bidi_comp)
 if nargin<7 || isempty(K_b)
     K_b=0;
 end
@@ -9,8 +9,11 @@ if bidi_comp
 batchData=batchData([1:2:end 2:2:end],:,:);
 end
 [ly,lx]=size(batchData,1:2);
-m=mean(batchData,1:2);
-batchData=batchData-m;
+batchData=zscore(batchData,[],1:2);
+lcorr=lcorr*ones(1,2);
+if bidi_comp
+    lcorr(1)=ceil(lcorr(1)/2);
+end
 if K_b>0
         if size(batchData,3)>1000
         [U,S,V] = bksvd(reshape(batchData,[],size(batchData,3)), K_b);
@@ -32,17 +35,17 @@ if K_b>0
 
         corrClip = real(ifft2(corrMap));
         corrClip = fftshift(fftshift(corrClip,1),2);
-
+        corrClip=corrClip./prod(size(corrClip,1:2));
         % --- subpixel estimation ---
             Mode_cc0 = corrClip( ...
-                floor(ly/2)+1+(-lcorr:lcorr), ...
-                floor(lx/2)+1+(-lcorr:lcorr), :);
+                floor(ly/2)+1+(-lcorr(1):lcorr(1)), ...
+                floor(lx/2)+1+(-lcorr(2):lcorr(2)), :);
 
 Mode_cc0 = reshape(Mode_cc0,[],K_b);
 % VS = V * S;
 % cc0=Mode_cc0*VS';
 cc0=Mode_cc0*S*V';
-cc0=reshape(cc0,lcorr*2+1,lcorr*2+1,[]);
+cc0=reshape(cc0,lcorr(1)*2+1,lcorr(2)*2+1,[]);
 
 % cc0=zeros(lcorr*2+1,lcorr*2+1,nf);
 % corrClip=reshape(corrClip,[],size(corrClip,3));
@@ -68,8 +71,8 @@ else
         corrClip = real(ifft2(corrMap));
         corrClip = fftshift(fftshift(corrClip,1),2);
             cc0 = corrClip( ...
-                floor(ly/2)+1+(-lcorr:lcorr), ...
-                floor(lx/2)+1+(-lcorr:lcorr), :);
+                floor(ly/2)+1+(-lcorr(1):lcorr(1)), ...
+                floor(lx/2)+1+(-lcorr(2):lcorr(2)), :);
 end
 
 

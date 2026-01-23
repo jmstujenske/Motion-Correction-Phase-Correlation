@@ -59,7 +59,7 @@ lx_old = -1;
 for ib = 1:nblocks
 
     refImg = single(mimgB{ib});
-    refImg = refImg - mean(refImg,'all');
+    refImg = zscore(refImg.^2,[],1:2);
 
     if nblocks>1
     subdata = data(yBL{ib}, xBL{ib}, whichch:n_ch:end);
@@ -182,13 +182,13 @@ end
 % if useSVD
     % cc0=calc_correlation(batchData,cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b);
 % else
-    cc0=calc_correlation(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, single(batchData))),...
+    [cc0,lcorr2]=calc_correlation(bsxfun(@plus, maskOffset, bsxfun(@times, maskMul, single(batchData).^2)),...
         cfRefImg,fhg,eps0,lcorr,phaseCorrelation,K_b,bidi_comp);
 % end
         % --- subpixel estimation ---
         if subpixel > 1
             [~,ii] = max(reshape(cc0,[],numel(fi)),[],1);
-            [iy,ix] = ind2sub((2*lcorr+1)*[1 1], ii);
+            [iy,ix] = ind2sub(size(cc0,1:2), ii);
 
             dl = single(-lpad:lpad);
             if useGPU
@@ -212,12 +212,12 @@ end
                 [m(ib,fi),ixg] = max(ccb,[],1);
                 [ix11,ix21] = ind2sub(numel(linds)*[1 1],ixg);
                 mdpt = floor(numel(linds)/2)+1;
-                dv0 = ([ix11' ix21']-mdpt)/subpixel + mxpt - lcorr ...
+                dv0 = ([ix11' ix21']-mdpt)/subpixel + mxpt - lcorr2 ...
                        - 1;
             else
                 yshift = xt(1,:) * ccmat;
                 xshift = xt(2,:) * ccmat;
-                dv0 = [yshift' xshift'] ./ sum(ccmat,1)' + mxpt - lcorr ...
+                dv0 = [yshift' xshift'] ./ sum(ccmat,1)' + mxpt - lcorr2 ...
                        - 1;
                 dv0 = round(dv0 * subpixel) / subpixel;
                 m(ib,fi) = max(ccmat,[],1);
@@ -229,7 +229,7 @@ end
             [my,iy] = max(cc0,[],1);
             [m(ib,fi),ix] = max(my,[],2);
 
-            dv0 = [iy(:)-lcorr ix(:)-lcorr] - 1;
+            dv0 = [iy(:)-lcorr2(1) ix(:)-lcorr2(2)] - 1;
             ds(ib,fi,:) = gather_try(dv0);
         end
     end

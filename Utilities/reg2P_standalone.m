@@ -23,7 +23,7 @@ function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
 %motion correction (default: true)
 %bidi_comp - whether to compensate for differences introduced by
 %bidirectional scanning when calculating cross-correlation (only necessary
-%for more hardware configurations; default: true)
+%for certain hardware configurations; default: true)
 %
 %Expansion of solution from Suite2p Matlab version, now made as a
 %standalone
@@ -33,7 +33,7 @@ function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
 %Stujenske, JM Jan 2026
 %
 %
-if isstruct(varargin{1})
+if ~isempty(varargin) && isstruct(varargin{1})
     options_in=varargin{1};
     options=parse_options(options_in);
 else
@@ -42,7 +42,6 @@ end
 [kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,...
     bidi_comp,bidi_correct,trim,subpixel,useGPU,phaseCorrelation,maskSlope,...
     smoothSigma,eps0]=eval_options(options);
-
 % if subpixel is still inf, threshold it for new method
 subpixel = min(10, subpixel);
 
@@ -54,138 +53,68 @@ if ~isempty(mimg) && bidi_correct
     [~,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,false,false);
 end
 
-if quick
     if nargin<2 || isempty(mimg)
-        % refImg=gen_mimg(data,whichch,n_ch,n_Frames_template);
-        % refImg=mean(data(:,:,whichch:n_ch:end),3);
-        refImg=gen_template(data,min(1000,nf/n_ch),n_ch,whichch);
-        if bidi_correct
-            if ~bidi_comp
-            [refImg,dx_bidi]=correct_bidi_across_x(refImg,1,1,false,false,false);
-            refImg=refImg-movmin(refImg,trim,2)+mean(movmin(refImg,trim,2),'all');
-            % dx_bidi=nanmedian(dx_bidi);
-            data=apply_bidi_correction_direct(data,dx_bidi,n_ch,true,1);
-            else
-            [~,dx_bidi]=correct_bidi_across_x(refImg,1,1,false,false,false);
-            end
-        else
-            dx_bidi=0;
-        end
+        gen_mimg_and_bidi_correct();
     else
-        refImg=mimg;
+            mimg=single(mimg);
+            mimg(mimg<0)=0;
     end
-    % fft_sz=5000;
-        % [y,x,m]=cross_corr_memory(fft_sz);
 
-% [ds,m] = register_blocks_fft_subpixel( ...
-%     data(:,:,whichch:n_ch:end), refImg,[], ...
-%     maxregshift, subpixel, ...
-%     smoothSigma, maskSlope, ...
-%     phaseCorrelation, kriging, ...
-%     useGPU, eps0);
+if quick
 [ds_rigid,m] = register_blocks_fft_subpixel( ...
-    data(trim+1:end-trim,trim+1:end-trim,:), refImg(trim+1:end-trim,trim+1:end-trim),whichch,n_ch,[], ...
+    data(trim+1:end-trim,trim+1:end-trim,:), mimg(trim+1:end-trim,trim+1:end-trim),whichch,n_ch,[], ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope*10, ...
     phaseCorrelation, kriging, ...
     useGPU, eps0,50000,true,bidi_comp);
-% ds_rigid=movmean(movmedian(ds_rigid,3,2),3,2);
-    % xyMask_rigid = make_xyMask(size(data,1), size(data,2), [1 1]);
-    % [y,x]=ds_to_dxy(xyMask_rigid,ds,size(data,1:2));
+
     [y,x]=ds_to_dxy([],ds_rigid,size(data,1:2));
         if bidi_comp && bidi_correct
             data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg,dx_bidi);
         else
             data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg);
         end
-            % x=ds(:,:,2);
-            % y=ds(:,:,1);
-
-        % x=(x-median(x));
-        % y=(y-median(y));
-                    m_smooth=sgolayfilt(double(m),3,floor(fs/2)*2+1);
-            m_smooth=m_smooth-movmax(sgolayfilt(m_smooth,3,floor(fs/2)*2+1),[fs*3 0]);
-            th=multithresh(m_smooth)*.8;
-% ds_rigid=cat(3,y(:)',x(:)');
-% if prod(numBlocks)==1
-%     dreg_full=data;
-%     shifts={[],ds_rigid};
-%     return;
-% end
-movements=m_smooth<th;% | sqrt(x.^2+y.^2)>2; %only need to apply non-rigid to
-% cases where the maximum correlation after rigid correction dips below
-% expected, or large displacements, to be conservative
-movements_pad=find(conv(movements,ones(1,max(ceil(fs/10),3)),'same')>0);
-clear movements
-movements_pad=(movements_pad(:)-1)*n_ch+(1:n_ch)*n_ch;
-movements_pad=movements_pad(:);
-if isempty(movements_pad)
+movements=get_movements(m,fs);
+if isempty(movements)
     shifts=[];
     return;
 end
-data_sub=data(:,:,movements_pad);
-NT=length(movements_pad);
-else
-    NT=size(data,3);
-    movements_pad=1:size(data,3);
+data_sub=data(:,:,movements);
+else %if not quick
+    movements=1:size(data,3);
     m=[];
+
 end
-    [Ly,Lx] = size(data,1:2);
 
-
+[Ly,Lx] = size(data,1:2);
 class_data=class(data);
 
-nFrames=NT/n_ch;
-if nargin<2 || isempty(mimg)
-    if quick
-        channel_idx=whichch:n_ch:nf;
-        mimg=gen_template(data(:,:,channel_idx(setdiff(1:nf,movements_pad))),min(1000,nFrames));
-    else
-        mimg=gen_template(data,min(1000,nFrames),whichch,n_ch);
-        if bidi_correct
-            [~,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,false,false);
-        else
-            dx_bidi=0;
-        end
-        data=apply_bidi_correction_direct(data,dx_bidi,n_ch,true);
-    end
-    mimg=single(mimg);
-
-else
-    mimg=single(mimg);
-end
-mimg(mimg<0)=0;
-
-nblocks = prod(numBlocks);
 xyMask = make_xyMask(Ly, Lx, numBlocks);   
-if nblocks>1 || ~quick
-if quick
+if any(numBlocks>1) && quick
     ds = register_blocks_fft_subpixel( ...
     data_sub, mimg,whichch,n_ch,numBlocks, ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
     useGPU, eps0,5000,false,bidi_comp);
-else
+    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
+elseif ~quick
     ds = register_blocks_fft_subpixel( ...
     data, mimg,whichch,n_ch,numBlocks, ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
     useGPU, eps0,5000,false,bidi_comp);
-end
-        [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
+    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
 else
 dy=[];dx=[];ds=[];
 end
-
         if nargout>1
             if quick
                 shifts={xyMask,ds_rigid,ds};
             else
                 shifts={xyMask,ds};
             end
-% end
         end
 clear xyMask ds
 if ~isempty(dx) && ~all(dx==0 & dy==0,'all')
@@ -210,17 +139,39 @@ else
     end
 end
 
-% dreg=apply_nonrigid_dx(data_movtrunc_allch,dx,dy,n_ch,false,pad);
-
 if quick
     dreg_full=zeros(size(data),class_data);
-    full_mov=reshape(movements_pad+(0:n_ch-1),[],1);
+    full_mov=reshape(movements+(0:n_ch-1),[],1);
     dreg_full(:,:,setdiff(1:nf,full_mov))=data(:,:,setdiff(1:nf,full_mov));
     dreg_full(:,:,full_mov)=dreg;
     dreg=dreg_full;clear dreg_full;
 else
     dreg=cast(dreg,class_data);
 end
+
+    %%nested function%%
+    function gen_mimg_and_bidi_correct()
+            [mimg,f]=gen_template(data,min(1000,nf/n_ch),n_ch,whichch);
+            if bidi_correct
+                if ~bidi_comp || ~quick
+                [mimg,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,false,false);
+                % dx_bidi=nanmedian(dx_bidi);
+                data=apply_bidi_correction_direct(data,dx_bidi,n_ch,true,10);
+                else
+                [~,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,false,false);
+                end
+            else
+                dx_bidi=0;
+            end
+            mimg=mimg-movmin(mimg,trim,2)+mean(movmin(mimg,trim,2),'all');
+            options_rigid=options;options_rigid.quick=false;
+            options_rigid.numBlocks=[1 1];options_rigid.whichch=1;
+            options_rigid.n_ch=1;
+            data_corr=reg2P_standalone(data(:,:,f),mimg,options_rigid);
+            mimg=mean(data_corr,3);
+            mimg=mimg-movmin(mimg,trim,2)+mean(movmin(mimg,trim,2),'all');
+    end
+
 end
 
 function defaults=get_defaults()
@@ -250,12 +201,13 @@ function options=parse_inputs(inputs)
 defaults=get_defaults();
 n_inputs=length(inputs);
 nf=size(defaults,2);
+
 for i=1:nf
     field_i=defaults{1,i};
     if i<=n_inputs
         options.(field_i)=inputs{i};
         if isempty(options.(field_i))
-            options.(field_i)=defaults{2,1};
+            options.(field_i)=defaults{2,i};
         end
     else
         options.(field_i)=defaults{2,i};
@@ -284,6 +236,21 @@ maskSlope=options.maskSlope;
 smoothSigma=options.smoothSigma;
 eps0=options.eps0;
 end
+
+function movements=get_movements(m,fs)
+
+             m_smooth=sgolayfilt(double(m),3,floor(fs/2)*2+1);
+            m_smooth=m_smooth-movmax(sgolayfilt(m_smooth,3,floor(fs/2)*2+1),[fs*3 0]);
+            th=multithresh(m_smooth)*.8;
+
+movements=m_smooth<th;%only need to apply non-rigid to
+% cases where the maximum correlation after rigid correction dips below
+% expected
+movements=find(conv(movements,ones(1,max(ceil(fs/10),3)),'same')>0);
+movements=(movements(:)-1)*n_ch+(1:n_ch)*n_ch;
+movements=movements(:);
+end
+
 % function out=fft2_memory(X,block_size)
 % if nargin<2 || isempty(block_size)
 %     block_size=5000;
@@ -341,3 +308,5 @@ end
         %     end
         % end
 
+
+        
