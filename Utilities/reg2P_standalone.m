@@ -24,6 +24,8 @@ function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
 %bidi_comp - whether to compensate for differences introduced by
 %bidirectional scanning when calculating cross-correlation (only necessary
 %for certain hardware configurations; default: true)
+%relative_offset - avoid offset drift by forcing offset mean of 0 (default:
+%true)
 %
 %Expansion of solution from Suite2p Matlab version, now made as a
 %standalone
@@ -40,7 +42,7 @@ else
     options=parse_inputs(varargin);
 end
 [kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,...
-    bidi_comp,bidi_correct,trim,subpixel,useGPU,phaseCorrelation,maskSlope,...
+    bidi_comp,bidi_correct,relative_offset,trim,subpixel,useGPU,phaseCorrelation,maskSlope,...
     smoothSigma,eps0]=eval_options(options);
 % if subpixel is still inf, threshold it for new method
 subpixel = min(10, subpixel);
@@ -68,7 +70,7 @@ if quick
     phaseCorrelation, kriging, ...
     useGPU, eps0,50000,true,bidi_comp);
 
-    [y,x]=ds_to_dxy([],ds_rigid,size(data,1:2));
+    [y,x]=ds_to_dxy([],ds_rigid,size(data,1:2),relative_offset);
         if bidi_comp && bidi_correct
             data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg,dx_bidi);
         else
@@ -97,7 +99,7 @@ if any(numBlocks>1) && quick
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
     useGPU, eps0,5000,false,bidi_comp);
-    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
+    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx],relative_offset);
 elseif ~quick
     ds = register_blocks_fft_subpixel( ...
     data, mimg,whichch,n_ch,numBlocks, ...
@@ -105,7 +107,7 @@ elseif ~quick
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
     useGPU, eps0,5000,false,bidi_comp);
-    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx]);
+    [dy,dx]=ds_to_dxy(xyMask,ds,[Ly Lx],relative_offset);
 else
 dy=[];dx=[];ds=[];
 end
@@ -175,8 +177,8 @@ end
 end
 
 function defaults=get_defaults()
-defaults={'kriging','numBlocks','n_ch','whichch','maxregshift','fs','quick','use_subpixel_reg','bidi_comp','bidi_correct','trim','subpixel','useGPU','phaseCorrelation','maskSlope','smoothSigma','eps0';...
-            true,   [1 1],       1,    1,       30,           27,    true,   true,              false,       false,        30,    10,        false,   true,              5,          1.15,         1e-10};
+defaults={'kriging','numBlocks','n_ch','whichch','maxregshift','fs','quick','use_subpixel_reg','bidi_comp','bidi_correct','relative_offset','trim','subpixel','useGPU','phaseCorrelation','maskSlope','smoothSigma','eps0';...
+            true,   [1 1],       1,    1,       30,           27,    true,   true,              false,       false,        true,             30,    10,        false,   true,              5,          1.15,         1e-10};
 end
 
 function options_out=parse_options(options)
@@ -216,7 +218,7 @@ end
 end
 
 function [kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,...
-    use_subpixel_reg,bidi_comp,bidi_correct,trim,subpixel,useGPU,...
+    use_subpixel_reg,bidi_comp,bidi_correct,relative_offset,trim,subpixel,useGPU,...
     phaseCorrelation,maskSlope,smoothSigma,eps0]=eval_options(options)
 kriging=options.kriging;
 numBlocks=options.numBlocks;
@@ -228,6 +230,7 @@ quick=options.quick;
 use_subpixel_reg=options.use_subpixel_reg;
 bidi_comp=options.bidi_comp;
 bidi_correct=options.bidi_correct;
+relative_offset=options.relative_offset;
 trim=options.trim;
 subpixel=options.subpixel;
 useGPU=options.useGPU;

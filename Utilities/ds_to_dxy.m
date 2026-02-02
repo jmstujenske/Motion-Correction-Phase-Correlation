@@ -1,11 +1,16 @@
-function [dy,dx]=ds_to_dxy(xyMask,ds,sz)
+function [dy,dx]=ds_to_dxy(xyMask,ds,sz,relative)
+if nargin<4 || isempty(relative)
+    relative=true;
+end
 Ly=sz(1);
 Lx=sz(2);
 if size(ds,1)==1
     dx = ds(:,:,2);
     dy = ds(:,:,1);
+    if relative
     dx = dx-round(median(dx,'all'));
     dy = dy-round(median(dy,'all'));
+    end
     dx = reshape(dx,1,1,[]);
     dy = reshape(dy,1,1,[]);
     return;
@@ -13,8 +18,6 @@ end
 try
 dx = (xyMask * ds(:,:,2));
 dy = (xyMask * ds(:,:,1));
-dx = dx-round(median(dx,'all'));
-dy = dy-round(median(dy,'all'));
 catch
     batch_size=1000;
     n_rep=size(xyMask,1);
@@ -29,6 +32,10 @@ catch
         dx(pix,:) = (xyMask(pix,:) * ds(:,:,2));
         dy(pix,:) = (xyMask(pix,:) * ds(:,:,1));
     end
+end
+if relative
+dx = dx-round(median(dx,'all'));
+dy = dy-round(median(dy,'all'));
 end
 dx = reshape(dx, Ly, Lx, []);
 dy = reshape(dy, Ly, Lx, []);

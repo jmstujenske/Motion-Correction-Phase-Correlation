@@ -1,0 +1,10 @@
+function mask=bad_edge_mask_xy(x_D,y_D)
+[dy,dx]=gradient(x_D);
+[dyy,dxy]=gradient(y_D);
+changes=(sqrt(dy.^2+dyy.^2+dx.^2+dxy.^2));
+% mask=changes>multithresh(changes
+mask=changes>(nanmean(changes,'all')+3*nanstd(changes,[],'all')) | isnan(changes);
+mask=conv2(double(mask),ones(5,5),'same')>0;
+mask([1 end],:)=true;
+mask(:,[1 end])=true;
+mask=imclose(mask,strel('rectangle',ceil(size(x_D,1:2)/10)));

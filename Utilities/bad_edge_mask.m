@@ -1,0 +1,10 @@
+function mask=bad_edge_mask(X)
+% mask=changes>multithresh(changes
+X=double(X);
+th=mean(X,'all')-1*std(X,[],'all');
+X(X>th)=th;
+mask=X<multithresh(X);
+mask=conv2(double(mask),ones(5,5),'same')>0;
+mask([1 end],:)=true;
+mask(:,[1 end])=true;
+mask=imclose(mask,strel('rectangle',ceil(size(X,1:2)/10)));

@@ -1,6 +1,7 @@
 function dreg=apply_reg2P_shifts(data,varargin)
 %dreg=apply_reg2P_shifts(data,xyMask,ds)
 %dreg=apply_reg2p_shifts(data,shifts)
+%dreg=apply_reg2p_shifts(data,shifts,pad)
 %
 if iscell(varargin{1})
     xyMask=varargin{1}{1};
@@ -43,13 +44,14 @@ data=pad_expand(data,pad);
 
 if exist('ds_rigid','var')
     ds_rigid=reshape(ds_rigid,1,[],2);
-    nshifts=size(ds_rigid,2);
-    n_ch=NT/nshifts;
-for i = 1:NT
-    frame_num=ceil(i/n_ch);
-    Im = data(:,:,i);
-    data(:,:,i)=imwarp(Im,repmat(ds_rigid(1,frame_num,:),size(data,1:2)));
-end
+%     nshifts=size(ds_rigid,2);
+%     n_ch=NT/nshifts;
+% for i = 1:NT
+%     frame_num=ceil(i/n_ch);
+%     Im = data(:,:,i);
+%     data(:,:,i)=images.internal.interp2d(Im,repmat(ds_rigid(1,frame_num,:),size(data,1:2)),'linear',0);
+% end
+ds=ds+ds_rigid;
 end
 class_data=class(data);
 if ~isempty(ds)
@@ -72,7 +74,7 @@ for i = 1:NT
         dx_i=dx(:,:,frame_num);
         dy_i=dy(:,:,frame_num);
     end
-    dreg(:,:,i)=imwarp(Im,cat(3,dx_i,dy_i));
+    dreg(:,:,i)=images.internal.interp2d(Im,cat(3,dx_i,dy_i),'linear',0);
 end
 else
     dreg=data;
