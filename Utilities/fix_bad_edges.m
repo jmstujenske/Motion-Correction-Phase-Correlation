@@ -6,8 +6,10 @@ n=size(Vx,3);
 for i=1:n
     V_slice=Vx(:,:,i);
 Fx = scatteredInterpolant(X(~bad_pix),Y(~bad_pix), V_slice(~bad_pix), 'linear', 'nearest');
-
-V_slice(bad_pix) = Fx(X(bad_pix), Y(bad_pix));
+    correction=Fx(X(bad_pix), Y(bad_pix));
+    if ~isempty(correction)
+V_slice(bad_pix) = correction;
+    end
 Vx(:,:,i)=V_slice;
 end
 end
