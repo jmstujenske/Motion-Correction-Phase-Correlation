@@ -2,7 +2,7 @@
 function [out,D_field]=align_pyramids(to_align,new_template,blocks,type,orig_type,smooth)
 max_shift_init=50;
 max_shift=20;
-bg_filt_sz=50;
+bg_filt_sz=1;
 to_align_orig=to_align;
 % new_template=new_template.^2;
 % to_align=to_align.^2;
@@ -27,10 +27,22 @@ if smooth
     new_template=pad_expand_0(new_template,pad);
     blocks=blocks+ceil(pad./sz);
 end
-to_align(to_align==0)=NaN;
-new_template(new_template==0)=NaN;
-to_align=to_align./imgaussfilt_nanignore(to_align,bg_filt_sz,'Padding','symmetric');
-new_template=new_template./imgaussfilt_nanignore(new_template,bg_filt_sz,'Padding','symmetric');
+to_align_nan=to_align;
+to_align_nan(to_align==0)=NaN;
+to_align_nan(bad_edge_mask(to_align))=NaN;
+new_template_nan=new_template;
+new_template_nan(new_template==0)=NaN;
+new_template_nan(bad_edge_mask(new_template))=NaN;
+
+new_template=fix_bad_edges(new_template,isnan(new_template_nan));
+to_align=fix_bad_edges(to_align,isnan(to_align_nan));
+
+to_align=to_align-imgaussfilt_nanignore(to_align_nan,bg_filt_sz,'Padding','symmetric');
+new_template=new_template-imgaussfilt_nanignore(new_template_nan,bg_filt_sz,'Padding','symmetric');
+new_template(isnan(new_template_nan))=0;
+to_align(isnan(to_align_nan))=0;
+to_align=max(to_align,0);
+new_template=max(new_template,0);
 to_align=to_align.^2;
 new_template=new_template.^2;
 % [ax,ay]=gradient(to_align);
@@ -81,7 +93,7 @@ ys_func=@(x) max(ycoords(x)-ceil(spacing(1)*10/3)-1,1):min(ycoords(x)+ceil(spaci
 % xs_func_template=@(x) max(xcoords(x)-ceil(spacing(2)*7/3)-1,1):min(xcoords(x)+ceil(spacing(2)*7/3),xdim);
 % ys_func_template=@(x) max(ycoords(x)-ceil(spacing(1)*7/3)-1,1):min(ycoords(x)+ceil(spacing(1)*7/3),ydim);
 
-for cut=1:ncuts
+parfor cut=1:ncuts
     [y_cut,x_cut]=ind2sub([length(ycoords) length(xcoords)],cut);
 xs=xs_func(x_cut);
 ys=ys_func(y_cut);

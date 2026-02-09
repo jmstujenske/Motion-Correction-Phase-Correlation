@@ -1,5 +1,4 @@
 function mask=bad_edge_mask(X)
-% mask=changes>multithresh(changes
 X=double(X);
 th=mean(X,'all')-1*std(X,[],'all');
 X(X>th)=th;
