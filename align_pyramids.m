@@ -1,11 +1,10 @@
 
-function [out,D_field]=align_pyramids(to_align,new_template,blocks,type,orig_type,smooth)
+function [out,D_field]=align_pyramids(to_align,template_image,blocks,type,orig_type,smooth)
 max_shift_init=50;
 max_shift=20;
 bg_filt_sz=1;
 to_align_orig=to_align;
-% new_template=new_template.^2;
-% to_align=to_align.^2;
+
 if nargin<6 || isempty(smooth)
     smooth=true;
 end
@@ -20,46 +19,46 @@ if nargin<3 || isempty(blocks)
 end
 
 if smooth
-    sz=ceil(size(new_template)./blocks);
+    sz=ceil(size(template_image)./blocks);
     pad=max(sz);
     pad=ceil(pad/2)*2;
     to_align=pad_expand_0(to_align,pad);
-    new_template=pad_expand_0(new_template,pad);
+    template_image=pad_expand_0(template_image,pad);
     blocks=blocks+ceil(pad./sz);
 end
 to_align_nan=to_align;
 to_align_nan(to_align==0)=NaN;
 to_align_nan(bad_edge_mask(to_align))=NaN;
-new_template_nan=new_template;
-new_template_nan(new_template==0)=NaN;
-new_template_nan(bad_edge_mask(new_template))=NaN;
+new_template_nan=template_image;
+new_template_nan(template_image==0)=NaN;
+new_template_nan(bad_edge_mask(template_image))=NaN;
 
-new_template=fix_bad_edges(new_template,isnan(new_template_nan));
+template_image=fix_bad_edges(template_image,isnan(new_template_nan));
 to_align=fix_bad_edges(to_align,isnan(to_align_nan));
 
 to_align=to_align-imgaussfilt_nanignore(to_align_nan,bg_filt_sz,'Padding','symmetric');
-new_template=new_template-imgaussfilt_nanignore(new_template_nan,bg_filt_sz,'Padding','symmetric');
-new_template(isnan(new_template_nan))=0;
+template_image=template_image-imgaussfilt_nanignore(new_template_nan,bg_filt_sz,'Padding','symmetric');
+template_image(isnan(new_template_nan))=0;
 to_align(isnan(to_align_nan))=0;
 to_align=max(to_align,0);
-new_template=max(new_template,0);
+template_image=max(template_image,0);
 to_align=to_align.^2;
-new_template=new_template.^2;
+template_image=template_image.^2;
 % [ax,ay]=gradient(to_align);
-% [tx,ty]=gradient(new_template);
-% new_template=sqrt(tx.^2+ty.^2);
+% [tx,ty]=gradient(template_image);
+% template_image=sqrt(tx.^2+ty.^2);
 % to_align=sqrt(ax.^2+ay.^2);
 to_align(isnan(to_align))=1;
-new_template(isnan(new_template))=1;
+template_image(isnan(template_image))=1;
 
 
-    % tform = imregtform(to_align, new_template, 'affine', optimizer, metric);
-    % tform = imregcorr(to_align,imref2d(size(to_align)),new_template,imref2d(size(new_template)),'transformtype','similarity','Window',true);
-tform=align_pyramids_initial(to_align,new_template,orig_type);
+    % tform = imregtform(to_align, template_image, 'affine', optimizer, metric);
+    % tform = imregcorr(to_align,imref2d(size(to_align)),template_image,imref2d(size(template_image)),'transformtype','similarity','Window',true);
+tform=align_pyramids_initial(to_align,template_image,orig_type);
 
     if strcmp(type,'demons')
         to_align=gpuArray(to_align);
-        new_template=gpuArray(new_template);
+        template_image=gpuArray(template_image);
     end
     [optimizer, metric] = imregconfig('multimodal');
 
@@ -67,7 +66,7 @@ tform=align_pyramids_initial(to_align,new_template,orig_type);
     optimizer.Epsilon = 1.5e-4;
     optimizer.GrowthFactor = 1.01;
     optimizer.MaximumIterations = 300;
-[ydim,xdim]=size(new_template,1:2);
+[ydim,xdim]=size(template_image,1:2);
 
 [X,Y]=meshgrid(1:xdim,1:ydim);
 if ~isempty(tform)
@@ -104,7 +103,7 @@ kernel=imresize(kernel,[length(ys) length(xs)]);
 kernel=kernel./sum(kernel,'all');
 % kernel=1;
 smooth_func=@(x) kernel.*double(x);
-sub_temp=new_template(ys,xs);
+sub_temp=template_image(ys,xs);
 moving=to_align(ys,xs);
 [average_d{cut},count{cut}]=get_D_field_patch(sub_temp,moving,smooth_func,type,smooth,max_shift);
 %only want to calculate transform based on valid, not boundary conditioned
@@ -218,20 +217,20 @@ function out=apply_D_field_nan(to_align,D_field)
         out(bad)=0;
 end
 
-function tform=align_pyramids_initial(to_align,new_template,orig_type)
+function tform=align_pyramids_initial(to_align,template_image,orig_type)
     [optimizer, metric] = imregconfig('multimodal');
     switch lower(orig_type)
         case 'kaze'
-            tform = align_with_KAZE(to_align,new_template);
+            tform = align_with_KAZE(to_align,template_image);
             if isempty(tform)
                 warning('KAZE features alignment failed. Using affine as backup.')
-                tform = imregtform(to_align, new_template, 'affine', optimizer, metric);
+                tform = imregtform(to_align, template_image, 'affine', optimizer, metric);
             end
         case 'phase'
-            tform = imregcorr(to_align,imref2d(size(to_align)),new_template,imref2d(size(new_template)),'transformtype','similarity','Window',true);
+            tform = imregcorr(to_align,imref2d(size(to_align)),template_image,imref2d(size(template_image)),'transformtype','similarity','Window',true);
         otherwise
             try
-            tform = imregtform(to_align, new_template, orig_type, optimizer, metric);
+            tform = imregtform(to_align, template_image, orig_type, optimizer, metric);
             catch
                 warning('orig_type not recognized.');
                 tform=[];

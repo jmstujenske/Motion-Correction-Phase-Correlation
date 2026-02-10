@@ -1,6 +1,4 @@
 function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
-%kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
-%
 %Two input options:
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
 %
@@ -24,6 +22,7 @@ function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
 %bidi_comp - whether to compensate for differences introduced by
 %bidirectional scanning when calculating cross-correlation (only necessary
 %for certain hardware configurations; default: true)
+%bidi_correct - whether or not to find and correct bidirectional offsets
 %relative_offset - avoid offset drift by forcing offset mean of 0 (default:
 %true)
 %
