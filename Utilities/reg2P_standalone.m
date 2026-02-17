@@ -1,10 +1,7 @@
-<<<<<<< Updated upstream
-function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
-=======
+
 function [data,shifts,movements]=reg2P_standalone(data,mimg,varargin)
 %kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
 %
->>>>>>> Stashed changes
 %Two input options:
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
 %
