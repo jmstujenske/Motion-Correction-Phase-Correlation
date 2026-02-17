@@ -3,7 +3,7 @@ function [ds,m] = register_blocks_fft_subpixel( ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,batchSize,useSVD,bidi_comp)
+    useGPU, eps0,batchSize,useSVD,bidi_comp,trim)
 
 % data        : full movie [Y X T]
 % mimgB       : cell array of reference images per block
@@ -20,13 +20,16 @@ function [ds,m] = register_blocks_fft_subpixel( ...
 % eps0        : small constant for normalization
 %
 % ds          : [nblocks x nFrames x 2] shifts (y,x)
-if nargin<15 || isempty(bidi_comp)
+if nargin<17 || isempty(trim)
+    trim=0;
+end
+if nargin<16 || isempty(bidi_comp)
     bidi_comp=false;
 end
-if nargin<14 || isempty(useSVD)
+if nargin<15 || isempty(useSVD)
     useSVD=false;
 end
-if nargin<13 || isempty(batchSize)
+if nargin<14 || isempty(batchSize)
     batchSize=1000;
 end
 if nargin<3 || isempty(whichch)
@@ -63,16 +66,19 @@ for ib = 1:nblocks
 
     if nblocks>1
     subdata = data(yBL{ib}, xBL{ib}, whichch:n_ch:end);
+        ly = numel(yBL{ib});
+    lx = numel(xBL{ib});
+    else
+        ly=size(data,1);
+        lx=size(data,2);
     end
+    lx=lx-trim*2;
     % if nblocks>1
     % subdata = max(subdata-quantile(subdata,.05,3),0);
     % else
     % data = max(data-quantile(data,.05,3),0);
     % end
     % subdata = imgaussfilt(subdata, 0.5, 'Padding', 'symmetric');
-
-    ly = numel(yBL{ib});
-    lx = numel(xBL{ib});
 
     % --- geometry-dependent precomputation ---
     if ly ~= ly_old || lx ~= lx_old
@@ -129,7 +135,7 @@ for ib = 1:nblocks
     end
 
     maskOffset = mean(refImg(:)) * (1 - maskMul);
-
+refImg=refImg(:,trim+1:end-trim);
     if bidi_comp
     refImg=[refImg(1:2:end,:);refImg(2:2:end,:)];
     end
@@ -158,9 +164,9 @@ for ib = 1:nblocks
         end
         else
         if useGPU
-            batchData = gpuArray(data(:,:,fi));
+            batchData = gpuArray(data(:,:,(fi-1)*n_ch+whichch));
         else
-            batchData = data(:,:,fi);
+            batchData = data(:,trim+1:end-trim,(fi-1)*n_ch+whichch);
         end
         end
 if numel(batchData)>532*532*5000

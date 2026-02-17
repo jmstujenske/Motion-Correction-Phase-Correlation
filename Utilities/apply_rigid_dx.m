@@ -1,4 +1,4 @@
-function out=apply_rigid_dx(X,dx,dy,n_ch,subpixel,bidi_dx)
+function X=apply_rigid_dx(X,dx,dy,n_ch,subpixel,bidi_dx)
 if nargin<5 || isempty(subpixel)
     subpixel=false;
 end
@@ -12,10 +12,9 @@ orig_y=1:size(X,1);
 nf=size(X,3)/n_ch;
 dx=double(dx);
 dy=double(dy);
-changes=(abs(dx)>.5 | abs(dy)>.5);
+changes=(abs(dx)>0 | abs(dy)>0);
 fs=1:nf;
 fs=fs(changes);
-out=X;
 [x_coords,y_coords]=meshgrid(orig_x,orig_y);
 if ~subpixel
 nPixels=prod(size(X,1:2));
@@ -28,7 +27,7 @@ x_coords_new=min(max(round(x_coords_new),1),size(X,2));
 y_coords_new=min(max(round(y_coords_new),1),size(X,1));
 ins_orig=(x_coords-1)*size(X,1)+y_coords+reshape(fs_allch-1,1,1,[])*nPixels;
 ins=(x_coords_new-1)*size(X,1)+y_coords_new+reshape(fs_allch-1,1,1,[])*nPixels;
-out(double(ins_orig))=X(double(ins));
+X(double(ins_orig))=X(double(ins));
 end
 
 else
@@ -48,7 +47,7 @@ else
             y_coords_new=y_coords+double(dy(i));
             x_coords_new=min(max(round(x_coords_new),1),size(X,2));
             y_coords_new=min(max(round(y_coords_new),1),size(X,1));
-            out(:,:,(i-1)*n_ch+j)= images.internal.interp2d(Im,x_coords_new,y_coords_new,'linear',0);%less overhead than imwarp   
+            X(:,:,(i-1)*n_ch+j)= images.internal.interp2d(Im,x_coords_new,y_coords_new,'linear',0);%less overhead than imwarp  
         end
     end
 end

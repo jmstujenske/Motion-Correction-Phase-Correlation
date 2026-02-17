@@ -1,4 +1,10 @@
+<<<<<<< Updated upstream
 function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
+=======
+function [data,shifts,movements]=reg2P_standalone(data,mimg,varargin)
+%kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
+%
+>>>>>>> Stashed changes
 %Two input options:
 %dreg=reg2P_standalone(data,mimg,kriging,numBlocks,n_ch,whichch,maxregshift,fs,quick,use_subpixel_reg,bidi_comp,bidi_correct)
 %
@@ -34,6 +40,20 @@ function [dreg,shifts,m]=reg2P_standalone(data,mimg,varargin)
 %Stujenske, JM Jan 2026
 %
 %
+mem_info=memory;
+mem_info.MemAvailableAllArrays;
+low_memory=mem_info.MemAvailableAllArrays/(numel(data)*8)<4;
+if isnumeric(data) && low_memory
+    disp('Large matrix, so temporarily writing data to memory mapped binary file.')
+    t=datetime("now","Format","uuuuMMdd'T'HHmmss");
+    tempfilename=['C:\ProgramData\MATLAB\Reg2P_',char(t),'.bin'];
+    fid=fopen(tempfilename,'w');
+    fwrite(fid,data,class(data));
+    fclose(fid);
+    m=memmapfile(tempfilename,'Format',{class(data),size(data),'data'},'Writable',true);
+    data=MemmapRef(m);
+    clear m
+end
 if ~isempty(varargin) && isstruct(varargin{1})
     options_in=varargin{1};
     options=parse_options(options_in);
@@ -52,6 +72,8 @@ quick=false;
 end
 if ~isempty(mimg) && bidi_correct
     [~,dx_bidi]=correct_bidi_across_x(mimg,1,1,false,false,false);
+elseif bidi_correct && ((quick && ~bidi_comp) || ~quick)
+
 end
 
     if nargin<2 || isempty(mimg)
@@ -63,11 +85,11 @@ end
 
 if quick
 [ds_rigid,m] = register_blocks_fft_subpixel( ...
-    data(trim+1:end-trim,trim+1:end-trim,:), mimg(trim+1:end-trim,trim+1:end-trim),whichch,n_ch,[], ...
+    data, mimg,whichch,n_ch,[], ...
     maxregshift, subpixel, ...
     smoothSigma, maskSlope*10, ...
     phaseCorrelation, kriging, ...
-    useGPU, eps0,50000,true,bidi_comp);
+    useGPU, eps0,10000,true,bidi_comp,trim);
 
     [y,x]=ds_to_dxy([],ds_rigid,size(data,1:2),relative_offset);
         if bidi_comp && bidi_correct
@@ -75,7 +97,12 @@ if quick
         else
             data=apply_rigid_dx(data,x,y,n_ch,use_subpixel_reg);
         end
-movements=get_movements(m,fs);
+movements=get_movements(m,n_ch,fs);
+% x_zeroed=x-movmedian(x,fs*5);
+% y_zeroed=y-movmedian(y,fs*5);
+
+% displacements=sqrt(x_zeroed.^2+y_zeroed.^2);
+% movements = union(movements,find(displacements>.5));
 if isempty(movements)
     shifts=[];
     return;
@@ -121,33 +148,35 @@ clear xyMask ds
 if ~isempty(dx) && ~all(dx==0 & dy==0,'all')
     if quick
         if size(dx,1)==1
-            dreg=apply_rigid_dx(data_sub,dx,dy,n_ch,use_subpixel_reg);
+            data_sub=apply_rigid_dx(data_sub,dx,dy,n_ch,use_subpixel_reg);
         else
-            dreg=apply_nonrigid_dx(data_sub,dx,dy,n_ch,use_subpixel_reg);
+            data_sub=apply_nonrigid_dx(data_sub,dx,dy,n_ch,use_subpixel_reg);
         end
     else
         if size(dx,1)==1
-            dreg=apply_rigid_dx(data,dx,dy,n_ch,use_subpixel_reg);
+            data=apply_rigid_dx(data,dx,dy,n_ch,use_subpixel_reg);
         else
-            dreg=apply_nonrigid_dx(data,dx,dy,n_ch,use_subpixel_reg);
+            data=apply_nonrigid_dx(data,dx,dy,n_ch,use_subpixel_reg);
         end
     end
 else
-    if quick
-        dreg=data_sub;
-    else
-        dreg=data;
-    end
+    % if quick
+    %     dreg=data_sub;
+    % else
+    %     dreg=data;
+    % end
 end
-
 if quick
-    dreg_full=zeros(size(data),class_data);
-    full_mov=reshape(movements+(0:n_ch-1),[],1);
-    dreg_full(:,:,setdiff(1:nf,full_mov))=data(:,:,setdiff(1:nf,full_mov));
-    dreg_full(:,:,full_mov)=dreg;
-    dreg=dreg_full;clear dreg_full;
-else
-    dreg=cast(dreg,class_data);
+    % dreg_full=zeros(size(data),class_data);
+    % dreg_full(:,:,setdiff(1:nf,full_mov))=data(:,:,setdiff(1:nf,full_mov));
+    data(:,:,movements)=data_sub;
+% else
+%     data=cast(data,class_data);
+end
+if exist('tempfilename','var')
+    clear m
+    data=cast(data(:,:,:),class_data);
+    delete(tempfilename);
 end
 
     %%nested function%%
@@ -239,7 +268,7 @@ smoothSigma=options.smoothSigma;
 eps0=options.eps0;
 end
 
-function movements=get_movements(m,fs)
+function movements=get_movements(m,n_ch,fs)
 
              m_smooth=sgolayfilt(double(m),3,floor(fs/2)*2+1);
             m_smooth=m_smooth-movmax(sgolayfilt(m_smooth,3,floor(fs/2)*2+1),[fs*3 0]);
@@ -249,8 +278,8 @@ movements=m_smooth<th;%only need to apply non-rigid to
 % cases where the maximum correlation after rigid correction dips below
 % expected
 movements=find(conv(movements,ones(1,max(ceil(fs/10),3)),'same')>0);
-movements=(movements(:)-1)*n_ch+(1:n_ch)*n_ch;
-movements=movements(:);
+movements=(movements(:)-1)*n_ch+(1:n_ch);
+movements=sort(movements(:));
 end
 
 % function out=fft2_memory(X,block_size)
